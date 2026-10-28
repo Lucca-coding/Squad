@@ -139,17 +139,31 @@ io.on("connection", (s) => {
     if (list.length > 50) list.shift();
     io.to("r:" + s.data.room).emit("msg", m);
   });
-  s.on("create-channel", ({ name }, ack) => {
+  s.on("create-channel", ({ name, description }, ack) => {
     const r = rooms.get(s.data.room);
     if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
     name = clean(name, 30);
+    description = clean(description, 120);
     if (!name) return ack({ error: "Nome inválido." });
     if (r.channels.length >= 30) return ack({ error: "Limite de canais atingido." });
     const id = rid();
-    r.channels.push({ id, name });
+    r.channels.push({ id, name, description });
     r.msgs[id] = [];
-    pushInfo(s.data.room); // antes do ack, para o cliente já conhecer o canal
+    pushInfo(s.data.room);
     ack({ id });
+  });
+  s.on("edit-channel", ({ id, name, description }, ack = () => {}) => {
+    const r = rooms.get(s.data.room);
+    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
+    const channel = r.channels.find((c) => c.id === id);
+    if (!channel) return ack({ error: "Canal não encontrado." });
+    name = clean(name, 30);
+    description = clean(description, 120);
+    if (!name) return ack({ error: "Nome inválido." });
+    channel.name = name;
+    channel.description = description;
+    pushInfo(s.data.room);
+    ack({ ok: true });
   });
   s.on("delete-channel", ({ id }) => {
     const r = rooms.get(s.data.room);
