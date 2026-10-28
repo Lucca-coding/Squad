@@ -194,11 +194,11 @@ body.nomem #members{display:none}
   <small style="color:var(--mut);display:block;margin-top:10px">Para dar um cargo, clique no nome da pessoa na lista de membros.</small>
 </div></div>
 
-<script src="config.js"></script>
+<script src="config.js?v=20261028-2"></script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const CFG = window.MINICORD || {};
-const socket = io(CFG.SERVER_URL || undefined);
+const socket = io(CFG.SERVER_URL || "https://squad-server-xbns.onrender.com");
 const $ = (id) => document.getElementById(id);
 const rtc = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, ...(CFG.TURN || [])] };
 const MAX = 10;
