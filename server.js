@@ -2,14 +2,19 @@ const express = require("express");
 const http = require("http");
 const crypto = require("crypto");
 const { Server } = require("socket.io");
-const { registerAuth } = require("./auth");
 
 const MAX = 10; // máximo de pessoas na call
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" } });
 app.use(express.static("public"));
-registerAuth(app);
+
+// A autenticação fica desligada por padrão para não depender de PostgreSQL.
+// Quando formos testar o cadastro/login, habilitaremos explicitamente com ENABLE_AUTH=true.
+if (process.env.ENABLE_AUTH === "true") {
+  const { registerAuth } = require("./auth");
+  registerAuth(app);
+}
 app.get("/health", (_, res) => res.send("ok"));
 
 // ---------- utilidades ----------
