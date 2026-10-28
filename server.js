@@ -6,8 +6,15 @@ const { Server } = require("socket.io");
 const MAX = 10; // máximo de pessoas na call
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" } });
+const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" }, maxHttpBufferSize: 30 * 1024 * 1024 });
 app.use(express.static("public"));
+
+// A autenticação fica desligada por padrão para não depender de PostgreSQL.
+// Quando formos testar o cadastro/login, habilitaremos explicitamente com ENABLE_AUTH=true.
+if (process.env.ENABLE_AUTH === "true") {
+  const { registerAuth } = require("./auth");
+  registerAuth(app);
+}
 app.get("/health", (_, res) => res.send("ok"));
 
 // ---------- utilidades ----------
@@ -33,15 +40,16 @@ const newCode = () => { let c; do c = crypto.randomBytes(3).toString("hex").toUp
 const newRoom = (name, owner) => ({
   name, owner, members: new Map(), msgs: { geral: [] },
   channels: [{ id: "geral", name: "geral" }],
+  voiceChannels: [{ id: "voice-general", name: "Voz geral" }],
   roles: [{ id: "admin", name: "Admin", color: "#f23f43" }],
 });
-const info = (r) => ({ channels: r.channels, roles: r.roles, owner: r.owner });
+const info = (r) => ({ channels: r.channels, voiceChannels: r.voiceChannels || [{ id: "voice-general", name: "Voz geral" }], roles: r.roles, owner: r.owner });
 const socketsIn = (code) => [...io.sockets.sockets.values()].filter((s) => s.data.room === code);
 const can = (s, r) => s.data.pid && (s.data.pid === r.owner || (r.members.get(s.data.pid) || {}).role === "admin");
 
 const voiceOf = (code) =>
   socketsIn(code).filter((s) => s.data.voice).map((s) => ({
-    id: s.id, pid: s.data.pid, name: s.data.name,
+    id: s.id, pid: s.data.pid, name: s.data.name, channelId: s.data.voiceCh,
     muted: !!s.data.muted, deafened: !!s.data.deafened, screen: !!s.data.screen, cam: !!s.data.cam,
   }));
 const push = (code) => code && io.to("r:" + code).emit("voice-users", voiceOf(code));
@@ -49,7 +57,14 @@ const membersOf = (code) => {
   const r = rooms.get(code);
   if (!r) return [];
   const on = new Set(socketsIn(code).map((s) => s.data.pid));
-  return [...r.members].map(([pid, m]) => ({ pid, name: m.name, avatar: m.avatar || null, role: m.role || null, online: on.has(pid) }));
+  return [...r.members].map(([pid, m]) => {
+    const presence = ["online", "away", "dnd", "invisible"].includes(m.presence) ? m.presence : "online";
+    return {
+      pid, name: m.name, avatar: m.avatar || null, role: m.role || null, presence,
+      // Invisible users remain connected but appear offline to other members.
+      online: on.has(pid) && presence !== "invisible",
+    };
+  });
 };
 const pushMembers = (code) => code && io.to("r:" + code).emit("members", membersOf(code));
 const pushInfo = (code) => { const r = rooms.get(code); r && io.to("r:" + code).emit("room", info(r)); };
@@ -58,7 +73,7 @@ function leaveRoom(s) {
   const r = s.data.room;
   if (!r) return;
   s.leave("r:" + r);
-  Object.assign(s.data, { room: null, voice: false, muted: false, deafened: false, screen: false, cam: false });
+  Object.assign(s.data, { room: null, voice: false, voiceCh: null, muted: false, deafened: false, screen: false, cam: false });
   push(r);
   pushMembers(r);
 }
@@ -66,12 +81,14 @@ function leaveRoom(s) {
 io.on("connection", (s) => {
   s.data = { name: "Anônimo", avatar: null, pid: null };
 
-  s.on("profile", ({ name, avatar, key }) => {
+  s.on("profile", ({ name, avatar, key, presence }) => {
     if (typeof key === "string" && key.length >= 16 && key.length <= 80) s.data.pid = pidOf(key);
     s.data.name = clean(name, 20) || "Anônimo";
     s.data.avatar = okAvatar(avatar);
+    if (["online", "away", "dnd", "invisible"].includes(presence)) s.data.presence = presence;
+    if (!["online", "away", "dnd", "invisible"].includes(s.data.presence)) s.data.presence = "online";
     const r = rooms.get(s.data.room), m = r && r.members.get(s.data.pid);
-    if (m) { m.name = s.data.name; m.avatar = s.data.avatar; }
+    if (m) { m.name = s.data.name; m.avatar = s.data.avatar; m.presence = s.data.presence; }
     push(s.data.room);
     pushMembers(s.data.room);
   });
@@ -100,6 +117,7 @@ io.on("connection", (s) => {
     if (!room.owner) room.owner = s.data.pid; // quem entra primeiro numa sala sem dono vira o criador
     const m = room.members.get(s.data.pid) || { role: null };
     m.name = s.data.name; m.avatar = s.data.avatar;
+    m.presence = ["online", "away", "dnd", "invisible"].includes(s.data.presence) ? s.data.presence : "online";
     room.members.set(s.data.pid, m);
     s.data.room = code;
     s.join("r:" + code);
@@ -122,17 +140,31 @@ io.on("connection", (s) => {
     if (list.length > 50) list.shift();
     io.to("r:" + s.data.room).emit("msg", m);
   });
-  s.on("create-channel", ({ name }, ack) => {
+  s.on("create-channel", ({ name, description }, ack) => {
     const r = rooms.get(s.data.room);
     if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
     name = clean(name, 30);
+    description = clean(description, 120);
     if (!name) return ack({ error: "Nome inválido." });
     if (r.channels.length >= 30) return ack({ error: "Limite de canais atingido." });
     const id = rid();
-    r.channels.push({ id, name });
+    r.channels.push({ id, name, description });
     r.msgs[id] = [];
-    pushInfo(s.data.room); // antes do ack, para o cliente já conhecer o canal
+    pushInfo(s.data.room);
     ack({ id });
+  });
+  s.on("edit-channel", ({ id, name, description }, ack = () => {}) => {
+    const r = rooms.get(s.data.room);
+    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
+    const channel = r.channels.find((c) => c.id === id);
+    if (!channel) return ack({ error: "Canal não encontrado." });
+    name = clean(name, 30);
+    description = clean(description, 120);
+    if (!name) return ack({ error: "Nome inválido." });
+    channel.name = name;
+    channel.description = description;
+    pushInfo(s.data.room);
+    ack({ ok: true });
   });
   s.on("delete-channel", ({ id }) => {
     const r = rooms.get(s.data.room);
@@ -140,6 +172,48 @@ io.on("connection", (s) => {
     r.channels = r.channels.filter((c) => c.id !== id);
     delete r.msgs[id];
     pushInfo(s.data.room);
+  });
+  s.on("create-voice-channel", ({ name }, ack = () => {}) => {
+    const r = rooms.get(s.data.room);
+    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
+    name = clean(name, 30);
+    if (!name) return ack({ error: "Nome inválido." });
+    if (!r.voiceChannels) r.voiceChannels = [{ id: "voice-general", name: "Voz geral" }];
+    if (r.voiceChannels.length >= 20) return ack({ error: "Limite de canais de voz atingido." });
+    const id = rid(); r.voiceChannels.push({ id, name });
+    pushInfo(s.data.room); ack({ id });
+  });
+  s.on("edit-voice-channel", ({ id, name }, ack = () => {}) => {
+    const r = rooms.get(s.data.room);
+    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
+    const channel = (r.voiceChannels || []).find((c) => c.id === id);
+    if (!channel) return ack({ error: "Canal de voz não encontrado." });
+    name = clean(name, 30);
+    if (!name) return ack({ error: "Nome inválido." });
+    channel.name = name; pushInfo(s.data.room); ack({ ok: true });
+  });
+  s.on("delete-voice-channel", ({ id }, ack = () => {}) => {
+    const r = rooms.get(s.data.room);
+    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
+    if (!r.voiceChannels || r.voiceChannels.length <= 1) return ack({ error: "Mantenha pelo menos um canal de voz." });
+    if (socketsIn(s.data.room).some((socket) => socket.data.voice && socket.data.voiceCh === id))
+      return ack({ error: "Alguém está conectado a esse canal. Peça para todos saírem antes de excluí-lo." });
+    r.voiceChannels = r.voiceChannels.filter((c) => c.id !== id);
+    pushInfo(s.data.room); ack({ ok: true });
+  });
+
+  s.on("attachment", ({ ch, name, type, data }) => {
+    const r = rooms.get(s.data.room);
+    if (!r || !r.channels.some((c) => c.id === ch) || typeof data !== "string") return;
+    const match = data.match(/^data:([\w.+/-]+);base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) return s.emit("attachment-error", { error: "Arquivo inválido." });
+    const bytes = Buffer.byteLength(match[2], "base64");
+    if (bytes > 20 * 1024 * 1024) return s.emit("attachment-error", { error: "O limite é 20 MB por arquivo." });
+    name = clean(name, 180) || "arquivo";
+    type = clean(type || match[1], 120);
+    const m = { pid: s.data.pid, name: s.data.name, text: "", time: Date.now(), ch, attachment: { name, type, data, size: bytes } };
+    const list = (r.msgs[ch] ??= []); list.push(m); if (list.length > 50) list.shift();
+    io.to("r:" + s.data.room).emit("msg", m);
   });
 
   // ----- cargos -----
@@ -169,22 +243,24 @@ io.on("connection", (s) => {
   });
 
   // ----- voz -----
-  s.on("voice-join", (_, ack) => {
-    const r = s.data.room;
+  s.on("voice-join", ({ channelId }, ack) => {
+    const r = rooms.get(s.data.room);
     if (!r) return ack({ error: "Entre em uma sala primeiro." });
-    if (!s.data.voice && voiceOf(r).length >= MAX) return ack({ error: `Call cheia: máximo de ${MAX} pessoas.` });
-    Object.assign(s.data, { voice: true, muted: false, deafened: false, screen: false, cam: false });
-    ack({ ok: true });
-    push(r);
+    const channels = r.voiceChannels || [{ id: "voice-general", name: "Voz geral" }];
+    if (!channels.some((c) => c.id === channelId)) return ack({ error: "Canal de voz não encontrado." });
+    if ((!s.data.voice || s.data.voiceCh !== channelId) && voiceOf(s.data.room).filter((u) => u.channelId === channelId).length >= MAX)
+      return ack({ error: `Call cheia: máximo de ${MAX} pessoas.` });
+    Object.assign(s.data, { voice: true, voiceCh: channelId, muted: false, deafened: false, screen: false, cam: false });
+    ack({ ok: true }); push(s.data.room);
   });
-  s.on("voice-leave", () => { s.data.voice = false; push(s.data.room); });
+  s.on("voice-leave", () => { s.data.voice = false; s.data.voiceCh = null; push(s.data.room); });
   s.on("voice-state", (st) => {
     Object.assign(s.data, { muted: !!st.muted, deafened: !!st.deafened, screen: !!st.screen, cam: !!st.cam });
     push(s.data.room);
   });
   s.on("signal", ({ to, data }) => {
     const t = io.sockets.sockets.get(to);
-    if (t && t.data.voice && t.data.room === s.data.room) t.emit("signal", { from: s.id, data });
+    if (t && t.data.voice && t.data.room === s.data.room && t.data.voiceCh === s.data.voiceCh) t.emit("signal", { from: s.id, data });
   });
 
   s.on("disconnect", () => { push(s.data.room); pushMembers(s.data.room); });
