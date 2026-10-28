@@ -51,7 +51,14 @@ const membersOf = (code) => {
   const r = rooms.get(code);
   if (!r) return [];
   const on = new Set(socketsIn(code).map((s) => s.data.pid));
-  return [...r.members].map(([pid, m]) => ({ pid, name: m.name, avatar: m.avatar || null, role: m.role || null, online: on.has(pid) }));
+  return [...r.members].map(([pid, m]) => {
+    const presence = ["online", "away", "dnd", "invisible"].includes(m.presence) ? m.presence : "online";
+    return {
+      pid, name: m.name, avatar: m.avatar || null, role: m.role || null, presence,
+      // Invisible users remain connected but appear offline to other members.
+      online: on.has(pid) && presence !== "invisible",
+    };
+  });
 };
 const pushMembers = (code) => code && io.to("r:" + code).emit("members", membersOf(code));
 const pushInfo = (code) => { const r = rooms.get(code); r && io.to("r:" + code).emit("room", info(r)); };
@@ -68,12 +75,14 @@ function leaveRoom(s) {
 io.on("connection", (s) => {
   s.data = { name: "Anônimo", avatar: null, pid: null };
 
-  s.on("profile", ({ name, avatar, key }) => {
+  s.on("profile", ({ name, avatar, key, presence }) => {
     if (typeof key === "string" && key.length >= 16 && key.length <= 80) s.data.pid = pidOf(key);
     s.data.name = clean(name, 20) || "Anônimo";
     s.data.avatar = okAvatar(avatar);
+    if (["online", "away", "dnd", "invisible"].includes(presence)) s.data.presence = presence;
+    if (!["online", "away", "dnd", "invisible"].includes(s.data.presence)) s.data.presence = "online";
     const r = rooms.get(s.data.room), m = r && r.members.get(s.data.pid);
-    if (m) { m.name = s.data.name; m.avatar = s.data.avatar; }
+    if (m) { m.name = s.data.name; m.avatar = s.data.avatar; m.presence = s.data.presence; }
     push(s.data.room);
     pushMembers(s.data.room);
   });
