@@ -262,7 +262,13 @@ const userName = (id) => (voiceUsers.find((u) => u.id === id) || {}).name || "Al
 
 // ---------- renderização ----------
 function render() {
-  if (!room) { $("tch").innerHTML = $("vch").innerHTML = $("members").innerHTML = ""; return; }
+  if (!room) {
+    $("tch").innerHTML = $("vch").innerHTML = "";
+    $("memberlist").innerHTML = "";
+    $("members").hidden = true;
+    return;
+  }
+  $("members").hidden = false;
   renderChannels(); renderVoice(); renderMembers();
 }
 function renderChannels() {
