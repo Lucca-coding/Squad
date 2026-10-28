@@ -150,7 +150,7 @@ body.nomem #members{display:none}
   <div id="bar"><span id="title"></span><button class="ic" id="btnmem" title="Membros">👥</button></div>
   <div id="grid"></div>
   <div id="msgs"></div>
-  <div id="form"><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div>
+  <div id="form"><div class="line"><button class="ic" id="bfile" title="Anexar imagem ou arquivo">📎</button><input type="file" id="attachfile" multiple hidden><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div><small style="display:block;color:var(--mut);margin-top:5px">Imagens e arquivos até 20 MB por arquivo.</small></div>
 </div>
 <div id="members"><div class="member-tools"><input id="membersearch" type="search" placeholder="Buscar membro…" aria-label="Buscar membro"></div><div id="memberlist"></div></div>
 
@@ -199,6 +199,7 @@ body.nomem #members{display:none}
     <div><label>Volume do alto-falante</label><input type="range" id="vspk" min="0" max="100"></div>
   </div>
   <div class="line" style="align-items:center;margin-top:20px"><button class="btn1" id="btest">Teste do microfone</button><div id="meter"></div></div>
+  <label style="text-transform:none"><input type="checkbox" id="sounds"> Sons da sala</label>
   <label style="text-transform:none"><input type="checkbox" id="echo"> Cancelamento de eco</label>
   <label style="text-transform:none"><input type="checkbox" id="noise"> Supressão de ruído</label>
   <small style="color:var(--mut)">Use fones no teste para evitar eco.</small>
@@ -230,13 +231,14 @@ if (!["online", "away", "dnd", "invisible"].includes(profile.presence)) profile.
 let memberFilter = "";
 let key = LS.get("squadKey", null); // identidade anônima deste navegador (nunca é mostrada a ninguém)
 if (!key) { key = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()) + "-squad"; LS.set("squadKey", key); }
-const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true }, LS.get("audio", {}));
+const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true, sounds: true }, LS.get("audio", {}));
 let room = null, myPid = null, info = { channels: [], voiceChannels: [], roles: [], owner: null }, members = {}, curCh = null, unread = {};
 let voiceCh = null, voiceUsers = [], roomPass = "", locked = false;
 let micRaw = null, micSrc = null, micGain = null, micAn = null, micStream = null, muted = false, deaf = false, testing = false;
 const vids = { camera: null, screen: null };
 const pcs = {}, gains = {}, prefs = {}, analysers = {}, speaking = {}, meta = {};
 let ctx, master;
+function playUiSound(kind = "click") { if (!set.sounds || !ctx) return; try { const o = ctx.createOscillator(), g = ctx.createGain(), now = ctx.currentTime; o.type = "sine"; o.frequency.value = kind === "join" ? 880 : kind === "leave" ? 440 : kind === "mute" ? 330 : 660; g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.07, now + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12); o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 0.13); } catch {} }
 
 // ---------- utilidades ----------
 const color = (n) => { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${235 + (h % 85)},55%,45%)`; };
@@ -400,11 +402,15 @@ const addMsg = (m) => {
   const d = el("div", "m"), a = avatar(m.pid, mem.name || m.name); a.classList.add("big");
   const box = el("div"); box.innerHTML = "<b></b><small></small><div></div>";
   const b = box.querySelector("b"); b.textContent = mem.name || m.name; const c = roleColor(m.pid); if (c) b.style.color = c;
-  box.querySelector("small").textContent = new Date(m.time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  box.querySelector("div").textContent = m.text;
+  box.querySelector("small").textContent = new Date(m.time).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  const body = box.querySelector("div"); body.textContent = m.text || "";
+  if (m.attachment && m.attachment.data) { const a = document.createElement("a"); a.href = m.attachment.data; a.download = m.attachment.name || "arquivo"; a.textContent = "📎 " + (m.attachment.name || "Baixar arquivo") + " (" + Math.max(1, Math.round((m.attachment.size || 0) / 1024)) + " KB)"; a.style.cssText = "display:block;color:var(--neon);margin-top:6px;overflow-wrap:anywhere"; body.appendChild(a); if ((m.attachment.type || "").startsWith("image/")) { const img = document.createElement("img"); img.src = m.attachment.data; img.alt = m.attachment.name || "Imagem enviada"; img.style.cssText = "display:block;max-width:min(360px,70vw);max-height:300px;border-radius:8px;margin-top:8px"; body.appendChild(img); } }
   d.append(a, box); $("msgs").appendChild(d); $("msgs").scrollTop = $("msgs").scrollHeight;
 };
 socket.on("msg", (m) => { if (m.ch === curCh) addMsg(m); else { unread[m.ch] = true; renderChannels(); } });
+socket.on("attachment-error", (r) => alert(r && r.error || "Não foi possível enviar o arquivo."));
+$("bfile").onclick = () => { if (!curCh) return alert("Entre em um canal de texto primeiro."); $("attachfile").click(); };
+$("attachfile").onchange = async () => { const files = Array.from($("attachfile").files || []); $("attachfile").value = ""; for (const file of files) { if (file.size > 20 * 1024 * 1024) { alert("O arquivo " + file.name + " ultrapassa 20 MB."); continue; } try { const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); socket.emit("attachment", { ch: curCh, name: file.name, type: file.type || "application/octet-stream", data }); } catch { alert("Não foi possível ler o arquivo."); } } };
 $("input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.target.value.trim() && curCh) { socket.emit("msg", { ch: curCh, text: e.target.value }); e.target.value = ""; }
 });
@@ -513,7 +519,7 @@ async function fillDevices() {
 }
 $("bset").onclick = async () => {
   await initAudio();
-  $("vmic").value = set.micVol * 100; $("vspk").value = set.spkVol * 100; $("echo").checked = set.echo; $("noise").checked = set.noise;
+  $("vmic").value = set.micVol * 100; $("vspk").value = set.spkVol * 100; $("echo").checked = set.echo; $("noise").checked = set.noise; $("sounds").checked = set.sounds;
   $("setmodal").hidden = false;
   if (!micStream) await openMic();
   await fillDevices();
@@ -529,6 +535,7 @@ $("selspk").onchange = () => { set.spk = $("selspk").value || null; LS.set("audi
 $("vmic").oninput = () => { set.micVol = $("vmic").value / 100; if (micGain) micGain.gain.value = set.micVol; LS.set("audio", set); };
 $("vspk").oninput = () => { set.spkVol = $("vspk").value / 100; applyVol(); LS.set("audio", set); };
 $("echo").onchange = $("noise").onchange = async () => { set.echo = $("echo").checked; set.noise = $("noise").checked; LS.set("audio", set); await swapMic(); };
+$("sounds").onchange = () => { set.sounds = $("sounds").checked; LS.set("audio", set); };
 $("btest").onclick = async () => {
   if (!micStream && !(await openMic())) return alert("Sem acesso ao microfone.");
   testing = !testing;
@@ -539,8 +546,8 @@ navigator.mediaDevices && (navigator.mediaDevices.ondevicechange = () => !$("set
 
 function sendState() { socket.emit("voice-state", { muted: muted || deaf, deafened: deaf, screen: !!vids.screen, cam: !!vids.camera }); }
 function applyAll() { applyVol(); applyMic(); sendState(); ui(); }
-$("bmic").onclick = () => { if (deaf) { deaf = false; muted = false; } else muted = !muted; applyAll(); };
-$("bdeaf").onclick = () => { deaf = !deaf; applyAll(); };
+$("bmic").onclick = () => { if (deaf) { deaf = false; muted = false; } else muted = !muted; playUiSound("mute"); applyAll(); };
+$("bdeaf").onclick = () => { deaf = !deaf; playUiSound("click"); applyAll(); };
 
 // ---------- menu de volume de uma pessoa da call ----------
 function userMenu(id, n, ev) {
@@ -561,10 +568,11 @@ async function joinVoice(channelId) {
   socket.emit("voice-join", { channelId }, (r) => {
     if (r && r.error) { closeMic(); return alert(r.error); }
     voiceCh = channelId; if (micStream) watch(socket.id, micStream);
-    sendState(); syncPeers(); ui();
+    playUiSound("join"); sendState(); syncPeers(); ui();
   });
 }
 function leaveVoice() {
+  playUiSound("leave");
   ["camera", "screen"].forEach((k) => vids[k] && vids[k].getTracks().forEach((t) => t.stop()));
   vids.camera = vids.screen = null;
   closeMic(); Object.keys(pcs).forEach(closePc);
@@ -673,7 +681,7 @@ function syncPeers() {
   const ids = voiceUsers.filter((x) => x.channelId === voiceCh).map((x) => x.id).filter((x) => x !== socket.id);
   ids.forEach(getPc); Object.keys(pcs).filter((x) => !ids.includes(x)).forEach(closePc);
 }
-socket.on("voice-users", (u) => { voiceUsers = u; syncPeers(); render(); });
+socket.on("voice-users", (u) => { const previous = new Set(voiceUsers.filter((x) => x.channelId === voiceCh).map((x) => x.id)); voiceUsers = u; if (voiceCh && voiceUsers.some((x) => x.channelId === voiceCh && x.id !== socket.id && !previous.has(x.id))) playUiSound("join"); syncPeers(); render(); });
 
 // ---------- perfil ----------
 function refreshMe() {
