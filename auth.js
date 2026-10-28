@@ -81,6 +81,7 @@ async function authUser(req, res, next) {
 }
 router.post("/register", async (req, res, next) => {
   try {
+    if (!tokenSecret || tokenSecret.length < 32) return res.status(503).json({ error: "Autenticação ainda não configurada no servidor." });
     await ensureSchema();
     const username = String(req.body?.username || "").trim();
     const normalized = username.toLocaleLowerCase("en-US");
@@ -106,6 +107,7 @@ router.post("/register", async (req, res, next) => {
 });
 router.post("/login", async (req, res, next) => {
   try {
+    if (!tokenSecret || tokenSecret.length < 32) return res.status(503).json({ error: "Autenticação ainda não configurada no servidor." });
     await ensureSchema();
     const normalized = String(req.body?.username || "").trim().toLocaleLowerCase("en-US");
     const password = String(req.body?.password || "");
@@ -123,17 +125,21 @@ router.post("/login", async (req, res, next) => {
 router.get("/me", authUser, (req, res) => res.json({ user: publicUser(req.user) }));
 router.patch("/me", authUser, async (req, res, next) => {
   try {
-    const displayName = String(req.body?.displayName || "").trim().replace(/[\u0000-\u001f]/g, "").slice(0, 30);
-    const avatar = req.body?.avatar === null ? null : String(req.body?.avatar || "");
-    const presence = String(req.body?.presence || "");
+    const body = req.body || {};
+    const displayName = Object.prototype.hasOwnProperty.call(body, "displayName")
+      ? String(body.displayName || "").trim().replace(/[\\u0000-\\u001f]/g, "").slice(0, 30)
+      : req.user.display_name;
+    const avatarProvided = Object.prototype.hasOwnProperty.call(body, "avatar");
+    const avatar = body.avatar === null ? null : String(body.avatar || "");
+    const presence = String(body.presence || "");
     if (!displayName) return res.status(400).json({ error: "Nome de exibição inválido." });
-    if (avatar && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) || avatar.length > 40000))
+    if (avatarProvided && avatar && (!/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) || avatar.length > 40000))
       return res.status(400).json({ error: "Imagem de avatar inválida ou muito grande." });
     if (presence && !["online", "away", "dnd", "invisible"].includes(presence))
       return res.status(400).json({ error: "Status de presença inválido." });
     const result = await pool.query(
-      "UPDATE squad_users SET display_name=$1, avatar=$2, presence=COALESCE(NULLIF($3,''),presence), updated_at=NOW() WHERE id=$4 RETURNING id, username, display_name, avatar, presence, created_at",
-      [displayName, avatar || null, presence, req.user.id]
+      "UPDATE squad_users SET display_name=$1, avatar=CASE WHEN $2 THEN $3 ELSE avatar END, presence=COALESCE(NULLIF($4,''),presence), updated_at=NOW() WHERE id=$5 RETURNING id, username, display_name, avatar, presence, created_at",
+      [displayName, avatarProvided, avatar || null, presence, req.user.id]
     );
     res.json({ user: publicUser(result.rows[0]) });
   } catch (err) { next(err); }
