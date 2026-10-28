@@ -2,12 +2,14 @@ const express = require("express");
 const http = require("http");
 const crypto = require("crypto");
 const { Server } = require("socket.io");
+const { registerAuth } = require("./auth");
 
 const MAX = 10; // máximo de pessoas na call
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" } });
 app.use(express.static("public"));
+registerAuth(app);
 app.get("/health", (_, res) => res.send("ok"));
 
 // ---------- utilidades ----------
