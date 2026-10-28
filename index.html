@@ -275,11 +275,25 @@ function renderChannels() {
   $("tch").innerHTML = "";
   info.channels.forEach((c) => {
     const d = el("div", "ch" + (c.id === curCh ? " on" : "") + (unread[c.id] ? " unread" : ""));
-    d.append(el("span", "nm", "# " + c.name));
-    if (canManage() && info.channels.length > 1) {
-      const x = el("span", "x", "✕"); x.title = "Apagar canal";
-      x.onclick = (e) => { e.stopPropagation(); if (confirm(`Apagar o canal #${c.name}?`)) socket.emit("delete-channel", { id: c.id }); };
-      d.append(x);
+    const label = el("span", "nm", "# " + c.name);
+    if (c.description) label.title = c.description;
+    d.append(label);
+    if (canManage()) {
+      const edit = el("span", "x", "✎"); edit.title = "Editar canal";
+      edit.onclick = (e) => {
+        e.stopPropagation();
+        const name = prompt("Nome do canal:", c.name);
+        if (name === null) return;
+        const description = prompt("Descrição do canal (opcional, até 120 caracteres):", c.description || "");
+        if (description === null) return;
+        socket.emit("edit-channel", { id: c.id, name, description }, (r) => { if (r && r.error) alert(r.error); });
+      };
+      d.append(edit);
+      if (info.channels.length > 1) {
+        const x = el("span", "x", "✕"); x.title = "Apagar canal";
+        x.onclick = (e) => { e.stopPropagation(); if (confirm(`Apagar o canal #${c.name}?`)) socket.emit("delete-channel", { id: c.id }); };
+        d.append(x);
+      }
     }
     d.onclick = () => openChannel(c.id); $("tch").appendChild(d);
   });
@@ -379,7 +393,13 @@ $("input").addEventListener("keydown", (e) => {
 });
 $("badd").onclick = () => {
   const n = prompt("Nome do novo canal de texto:");
-  if (n && n.trim()) socket.emit("create-channel", { name: n }, (r) => (r.error ? alert(r.error) : openChannel(r.id)));
+  if (!n || !n.trim()) return;
+  const description = prompt("Descrição do canal (opcional, até 120 caracteres):", "") ;
+  if (description === null) return;
+  socket.emit("create-channel", { name: n, description }, (r) => {
+    if (r && r.error) alert(r.error);
+    else if (r && r.id) openChannel(r.id);
+  });
 };
 socket.on("room", (i) => {
   info = i;
