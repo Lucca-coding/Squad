@@ -2,12 +2,16 @@
 
 Esta etapa adiciona a API de cadastro e login à branch `desenvolvimento`. Ela ainda não conecta a tela de entrada do site ao fluxo de autenticação e não substitui o sistema atual de salas.
 
-## Variáveis obrigatórias no ambiente do servidor
+## Estado atual: autenticação desligada por padrão
 
-Configure no serviço de hospedagem, nunca diretamente no código:
+A API de contas fica desligada por padrão na branch `desenvolvimento`. Assim, o servidor continua iniciando sem PostgreSQL e sem segredo de autenticação, e o trabalho de cadastro/login fica guardado no arquivo `auth.js` para retomarmos depois.
+
+**Não configure essas variáveis nem ative a autenticação agora.** Quando formos testar cadastro/login em um ambiente separado, defina `ENABLE_AUTH=true` e configure as variáveis abaixo no serviço de teste, nunca diretamente no código:
 
 - `DATABASE_URL`: URL de conexão de um banco PostgreSQL persistente.
 - `AUTH_SECRET`: segredo aleatório com pelo menos 32 caracteres, usado para assinar os tokens de sessão.
+
+Sem `ENABLE_AUTH=true`, o servidor não carrega o módulo de autenticação nem registra as rotas de conta.
 
 Não publique esses valores no repositório. Use um banco gerenciado com backups e armazenamento durável; o armazenamento local efêmero do serviço não é suficiente para guardar contas.
 
