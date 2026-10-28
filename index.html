@@ -128,7 +128,7 @@ body.nomem #members{display:none}
   </div>
   <div id="lists">
     <div class="sec"><span>Canais de texto</span><button class="plus" id="badd" title="Criar canal" hidden>+</button></div><div id="tch"></div>
-    <div class="sec"><span>Canal de voz</span></div><div id="vch"></div>
+    <div class="sec"><span>Canais de voz</span><button class="plus" id="bvadd" title="Criar canal de voz" hidden>+</button></div><div id="vch"></div>
   </div>
   <div id="panel">
     <div id="voicebar" hidden>
@@ -231,7 +231,7 @@ let memberFilter = "";
 let key = LS.get("squadKey", null); // identidade anônima deste navegador (nunca é mostrada a ninguém)
 if (!key) { key = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()) + "-squad"; LS.set("squadKey", key); }
 const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true }, LS.get("audio", {}));
-let room = null, myPid = null, info = { channels: [], roles: [], owner: null }, members = {}, curCh = null, unread = {};
+let room = null, myPid = null, info = { channels: [], voiceChannels: [], roles: [], owner: null }, members = {}, curCh = null, unread = {};
 let voiceCh = null, voiceUsers = [], roomPass = "", locked = false;
 let micRaw = null, micSrc = null, micGain = null, micAn = null, micStream = null, muted = false, deaf = false, testing = false;
 const vids = { camera: null, screen: null };
@@ -264,6 +264,7 @@ const userName = (id) => (voiceUsers.find((u) => u.id === id) || {}).name || "Al
 function render() {
   if (!room) {
     $("tch").innerHTML = $("vch").innerHTML = "";
+    $("bvadd").hidden = true;
     $("memberlist").innerHTML = "";
     $("members").hidden = true;
     return;
@@ -301,19 +302,35 @@ function renderChannels() {
 }
 function renderVoice() {
   $("vch").innerHTML = "";
-  const h = el("div", "ch" + (voiceCh ? " on" : ""), `🔊 Voz (${voiceUsers.length}/${MAX})`);
-  h.onclick = () => joinVoice("Voz"); $("vch").appendChild(h);
-  voiceUsers.forEach((u) => {
-    const r = el("div", "vu");
-    const nm = el("span", "nm", u.name + (u.id === socket.id ? " (você)" : "")); const c = roleColor(u.pid); if (c) nm.style.color = c;
-    r.append(avatar(u.pid, u.name, u.id), nm);
-    if (u.screen) r.append(el("span", "badge", "AO VIVO"));
-    if (u.cam) r.append(el("span", "st", "📷"));
-    if (u.muted) r.append(Object.assign(el("span", "st", "🔇"), { title: "Microfone mutado" }));
-    if (u.deafened) r.append(Object.assign(el("span", "st", "🎧🚫"), { title: "Sem áudio" }));
-    if (u.id !== socket.id) r.onclick = (e) => userMenu(u.id, u.name, e);
-    $("vch").appendChild(r);
+  const channels = info.voiceChannels || [{ id: "voice-general", name: "Voz geral" }];
+  channels.forEach((channel) => {
+    const users = voiceUsers.filter((u) => u.channelId === channel.id);
+    const d = el("div", "ch" + (voiceCh === channel.id ? " on" : ""));
+    d.append(el("span", "nm", "🔊 " + channel.name), el("span", "sub", `${users.length}/${MAX}`));
+    if (canManage()) {
+      const edit = el("span", "x", "✎"); edit.title = "Editar canal de voz";
+      edit.onclick = (e) => { e.stopPropagation(); const name = prompt("Nome do canal de voz:", channel.name); if (name && name.trim()) socket.emit("edit-voice-channel", { id: channel.id, name }, (r) => r && r.error && alert(r.error)); };
+      d.append(edit);
+      if (channels.length > 1) {
+        const del = el("span", "x", "✕"); del.title = "Excluir canal de voz";
+        del.onclick = (e) => { e.stopPropagation(); if (confirm(`Excluir o canal de voz "${channel.name}"?`)) socket.emit("delete-voice-channel", { id: channel.id }, (r) => r && r.error && alert(r.error)); };
+        d.append(del);
+      }
+    }
+    d.onclick = () => joinVoice(channel.id); $("vch").appendChild(d);
+    users.forEach((u) => {
+      const row = el("div", "vu"), nm = el("span", "nm", u.name + (u.id === socket.id ? " (você)" : ""));
+      const c = roleColor(u.pid); if (c) nm.style.color = c;
+      row.append(avatar(u.pid, u.name, u.id), nm);
+      if (u.screen) row.append(el("span", "badge", "AO VIVO"));
+      if (u.cam) row.append(el("span", "st", "📷"));
+      if (u.muted) row.append(Object.assign(el("span", "st", "🔇"), { title: "Microfone mutado" }));
+      if (u.deafened) row.append(Object.assign(el("span", "st", "🎧🚫"), { title: "Sem áudio" }));
+      if (u.id !== socket.id) row.onclick = (e) => userMenu(u.id, u.name, e);
+      $("vch").appendChild(row);
+    });
   });
+  $("bvadd").hidden = !canManage();
 }
 function renderMembers() {
   const box = $("memberlist"); box.innerHTML = "";
@@ -394,12 +411,16 @@ $("input").addEventListener("keydown", (e) => {
 $("badd").onclick = () => {
   const n = prompt("Nome do novo canal de texto:");
   if (!n || !n.trim()) return;
-  const description = prompt("Descrição do canal (opcional, até 120 caracteres):", "") ;
+  const description = prompt("Descrição do canal (opcional, até 120 caracteres):", "");
   if (description === null) return;
   socket.emit("create-channel", { name: n, description }, (r) => {
     if (r && r.error) alert(r.error);
     else if (r && r.id) openChannel(r.id);
   });
+};
+$("bvadd").onclick = () => {
+  const name = prompt("Nome do novo canal de voz:");
+  if (name && name.trim()) socket.emit("create-voice-channel", { name }, (r) => r && r.error && alert(r.error));
 };
 socket.on("room", (i) => {
   info = i;
@@ -533,14 +554,13 @@ function userMenu(id, n, ev) {
 }
 
 // ---------- entrar / sair da voz ----------
-async function joinVoice(ch) {
-  if (voiceCh === ch) return;
-  if (voiceUsers.length >= MAX) return alert("Call cheia: máximo de " + MAX + " pessoas.");
+async function joinVoice(channelId) {
+  if (voiceCh === channelId) return;
   await initAudio();
   if (!(await openMic())) alert("Sem acesso ao microfone: você entrará só ouvindo.");
-  socket.emit("voice-join", {}, (r) => {
+  socket.emit("voice-join", { channelId }, (r) => {
     if (r && r.error) { closeMic(); return alert(r.error); }
-    voiceCh = ch; if (micStream) watch(socket.id, micStream);
+    voiceCh = channelId; if (micStream) watch(socket.id, micStream);
     sendState(); syncPeers(); ui();
   });
 }
@@ -650,7 +670,7 @@ socket.on("signal", async ({ from, data }) => {
 });
 function syncPeers() {
   if (!voiceCh) return;
-  const ids = voiceUsers.map((x) => x.id).filter((x) => x !== socket.id);
+  const ids = voiceUsers.filter((x) => x.channelId === voiceCh).map((x) => x.id).filter((x) => x !== socket.id);
   ids.forEach(getPc); Object.keys(pcs).filter((x) => !ids.includes(x)).forEach(closePc);
 }
 socket.on("voice-users", (u) => { voiceUsers = u; syncPeers(); render(); });
