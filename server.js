@@ -111,6 +111,7 @@ io.on("connection", (s) => {
     if (!room.owner) room.owner = s.data.pid; // quem entra primeiro numa sala sem dono vira o criador
     const m = room.members.get(s.data.pid) || { role: null };
     m.name = s.data.name; m.avatar = s.data.avatar;
+    m.presence = ["online", "away", "dnd", "invisible"].includes(s.data.presence) ? s.data.presence : "online";
     room.members.set(s.data.pid, m);
     s.data.room = code;
     s.join("r:" + code);
