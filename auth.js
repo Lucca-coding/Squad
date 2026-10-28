@@ -127,13 +127,13 @@ router.patch("/me", authUser, async (req, res, next) => {
   try {
     const body = req.body || {};
     const displayName = Object.prototype.hasOwnProperty.call(body, "displayName")
-      ? String(body.displayName || "").trim().replace(/[\\u0000-\\u001f]/g, "").slice(0, 30)
+      ? String(body.displayName || "").trim().replace(/[\u0000-\u001f]/g, "").slice(0, 30)
       : req.user.display_name;
     const avatarProvided = Object.prototype.hasOwnProperty.call(body, "avatar");
     const avatar = body.avatar === null ? null : String(body.avatar || "");
     const presence = String(body.presence || "");
     if (!displayName) return res.status(400).json({ error: "Nome de exibição inválido." });
-    if (avatarProvided && avatar && (!/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) || avatar.length > 40000))
+    if (avatarProvided && avatar && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) || avatar.length > 40000))
       return res.status(400).json({ error: "Imagem de avatar inválida ou muito grande." });
     if (presence && !["online", "away", "dnd", "invisible"].includes(presence))
       return res.status(400).json({ error: "Status de presença inválido." });
