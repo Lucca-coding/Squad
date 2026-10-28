@@ -57,12 +57,21 @@ button{font:inherit;cursor:pointer;border:0;color:var(--txt)}input,select{font:i
 #input{width:100%;padding:12px;border:0;border-radius:8px;background:var(--inp);color:var(--txt);outline:none}
 #input:focus,.card input:focus{outline:1px solid var(--neon);box-shadow:0 0 10px #00e5ff55}
 /* membros */
-#members{width:240px;background:var(--p1);border-left:1px solid var(--hov);overflow-y:auto;padding:4px 8px 16px;flex:none}
+#members{width:250px;background:var(--p1);border-left:1px solid var(--hov);overflow-y:auto;padding:8px;flex:none}
+.member-tools{position:sticky;top:-8px;z-index:2;background:var(--p1);padding:4px 0 8px}
+#membersearch{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--p2);color:var(--txt);outline:none}
+#membersearch:focus{border-color:var(--pur);box-shadow:0 0 0 2px #7c3aed33}
 .mg{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;margin:14px 8px 4px}
 .mem{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:6px;cursor:pointer}.mem:hover{background:var(--hov)}
 .mem.off{opacity:.45}.aw{position:relative;flex:none}
 .dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;background:#4b4866;border:2px solid var(--p1)}
-.dot.on{background:var(--neon);box-shadow:0 0 6px var(--neon)}
+.dot.on{background:#22c55e;box-shadow:0 0 6px #22c55e88}
+.dot.away{background:#fbbf24;box-shadow:0 0 6px #fbbf2488}
+.dot.dnd{background:#f23f43;box-shadow:0 0 6px #f23f4388}
+.dot.invisible{background:#77738b}
+.presence-tag{font-size:10px;color:var(--mut2);border:1px solid var(--line);border-radius:5px;padding:2px 5px;margin-left:auto;white-space:nowrap}
+.mem.off .nm{color:var(--mut)}
+#presence{width:100%;padding:8px;background:var(--p2);color:var(--txt);border:1px solid var(--line);border-radius:6px}
 body.nomem #members{display:none}
 @media(max-width:1000px){#members{display:none}body.showmem #members{display:block;position:fixed;right:0;top:0;bottom:0;z-index:15}}
 @media(max-width:700px){#side{width:190px}}
@@ -143,7 +152,7 @@ body.nomem #members{display:none}
   <div id="msgs"></div>
   <div id="form"><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div>
 </div>
-<div id="members"></div>
+<div id="members"><div class="member-tools"><input id="membersearch" type="search" placeholder="Buscar membro…" aria-label="Buscar membro"></div><div id="memberlist"></div></div>
 
 <input type="file" id="pfile" accept="image/*" hidden>
 <div class="pop" id="menu" hidden></div>
@@ -157,8 +166,16 @@ body.nomem #members{display:none}
       <button class="wide" id="premove" style="margin:0">Remover foto</button>
     </div>
   </div>
-  <label>Nome</label>
+  <label>Nome público</label>
   <input id="pname" maxlength="20" style="width:100%;background:var(--p2);color:var(--txt);border:0;padding:8px;border-radius:4px">
+  <label>Estado de presença</label>
+  <select id="presence">
+    <option value="online">🟢 Online</option>
+    <option value="away">🟡 Ausente</option>
+    <option value="dnd">🔴 Não perturbar</option>
+    <option value="invisible">⚫ Invisível</option>
+  </select>
+  <small style="display:block;color:var(--mut);margin-top:6px">No modo invisível, você aparece offline para os outros membros.</small>
   <button class="wide" id="psave">Salvar</button>
 </div>
 <div class="pop" id="sharepop" hidden style="width:300px">
@@ -208,7 +225,9 @@ const LS = {
 };
 
 // ---------- estado ----------
-let profile = Object.assign({ name: "", avatar: null }, LS.get("profile", {}));
+let profile = Object.assign({ name: "", avatar: null, presence: "online" }, LS.get("profile", {}));
+if (!["online", "away", "dnd", "invisible"].includes(profile.presence)) profile.presence = "online";
+let memberFilter = "";
 let key = LS.get("squadKey", null); // identidade anônima deste navegador (nunca é mostrada a ninguém)
 if (!key) { key = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()) + "-squad"; LS.set("squadKey", key); }
 const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true }, LS.get("audio", {}));
@@ -277,8 +296,10 @@ function renderVoice() {
   });
 }
 function renderMembers() {
-  const box = $("members"); box.innerHTML = "";
-  const all = Object.values(members), on = all.filter((m) => m.online), off = all.filter((m) => !m.online), o = info.owner;
+  const box = $("memberlist"); box.innerHTML = "";
+  const query = memberFilter.trim().toLocaleLowerCase("pt-BR");
+  const all = Object.values(members).filter((m) => !query || m.name.toLocaleLowerCase("pt-BR").includes(query));
+  const on = all.filter((m) => m.online), off = all.filter((m) => !m.online), o = info.owner;
   const groups = [];
   const g1 = on.filter((m) => m.pid === o); if (g1.length) groups.push(["Criador", g1]);
   info.roles.forEach((r) => { const g = on.filter((m) => m.role === r.id && m.pid !== o); if (g.length) groups.push([r.name, g]); });
@@ -289,9 +310,12 @@ function renderMembers() {
     list.forEach((m) => {
       const r = el("div", "mem" + (m.online ? "" : " off"));
       const aw = el("div", "aw"), a = avatar(m.pid, m.name); a.classList.add("mid");
-      aw.append(a, el("span", "dot" + (m.online ? " on" : "")));
+      const state = ["online", "away", "dnd", "invisible"].includes(m.presence) ? m.presence : (m.online ? "online" : "invisible");
+      aw.append(a, el("span", "dot " + (m.online ? (state === "away" || state === "dnd" ? state : "on") : "invisible")));
       const nm = el("span", "nm", m.name + (m.pid === o ? " 👑" : "")); const c = roleColor(m.pid); if (c) nm.style.color = c;
-      r.append(aw, nm); r.onclick = (e) => memberCard(m.pid, e); box.append(r);
+      r.append(aw, nm);
+      if (m.online && state !== "online") r.append(el("span", "presence-tag", state === "away" ? "Ausente" : "Não perturbar"));
+      r.onclick = (e) => memberCard(m.pid, e); box.append(r);
     });
   });
 }
@@ -609,11 +633,14 @@ socket.on("voice-users", (u) => { voiceUsers = u; syncPeers(); render(); });
 function refreshMe() {
   $("meav").replaceWith(Object.assign(avatar(myPid || "me", profile.name || "?", socket.id), { id: "meav" }));
   $("mename").textContent = profile.name || "";
+  const labels = { online: "🟢 online", away: "🟡 ausente", dnd: "🔴 não perturbar", invisible: "⚫ invisível" };
+  const sub = $("me").querySelector(".mn small"); if (sub) sub.textContent = labels[profile.presence] || labels.online;
 }
 function saveProfile() {
   LS.set("profile", profile);
-  if (socket.connected) socket.emit("profile", { name: profile.name, avatar: profile.avatar, key });
+  if (socket.connected) socket.emit("profile", { name: profile.name, avatar: profile.avatar, key, presence: profile.presence });
   refreshMe();
+  render();
 }
 function pickPhoto(cb) { // recorta em quadrado e reduz para 96x96
   const f = $("pfile"); f.value = "";
@@ -639,13 +666,14 @@ $("me").onclick = (e) => {
   if (e.target.closest("button")) return;
   e.stopPropagation();
   const p = $("profpop"); if (!p.hidden) { p.hidden = true; return; }
-  $("pname").value = profile.name; paint($("pav"), profile.avatar, profile.name); p.hidden = false;
+  $("pname").value = profile.name; $("presence").value = profile.presence || "online"; paint($("pav"), profile.avatar, profile.name); p.hidden = false;
   const r = $("me").getBoundingClientRect(); p.style.left = r.left + 8 + "px"; p.style.top = Math.max(8, r.top - p.offsetHeight - 8) + "px";
 };
 $("pav").onclick = $("pchange").onclick = () => pickPhoto((d) => { profile.avatar = d; paint($("pav"), d, profile.name); saveProfile(); });
 $("premove").onclick = () => { profile.avatar = null; paint($("pav"), null, profile.name); saveProfile(); };
-const saveName = () => { const n = $("pname").value.trim(); if (!n) return; profile.name = n; saveProfile(); $("profpop").hidden = true; };
+const saveName = () => { const n = $("pname").value.trim(); if (!n) return; profile.name = n; profile.presence = $("presence").value; saveProfile(); $("profpop").hidden = true; };
 $("psave").onclick = saveName; $("pname").onkeydown = (e) => e.key === "Enter" && saveName();
+$("presence").onchange = () => { profile.presence = $("presence").value; saveProfile(); };
 
 // ---------- salas ----------
 function enterRoom(code, password = "") {
@@ -712,9 +740,10 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest("#profpop,#me,#pfile")) $("profpop").hidden = true;
 });
 $("btnmem").onclick = () => document.body.classList.toggle(innerWidth > 1000 ? "nomem" : "showmem");
+$("membersearch").addEventListener("input", () => { memberFilter = $("membersearch").value; renderMembers(); });
 
 // ---------- conexão ----------
-socket.on("connect", () => { $("lstatus").textContent = "Conectado ✓"; if (profile.name) socket.emit("profile", { name: profile.name, avatar: profile.avatar, key }); });
+socket.on("connect", () => { $("lstatus").textContent = "Conectado ✓"; if (profile.name) socket.emit("profile", { name: profile.name, avatar: profile.avatar, key, presence: profile.presence }); });
 socket.on("connect_error", () => { $("lstatus").textContent = "Sem conexão com o servidor. Tentando de novo… (pode levar até 1 min se ele estava dormindo)"; });
 socket.on("disconnect", () => {
   if (voiceCh) leaveVoice();
