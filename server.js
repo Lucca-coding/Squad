@@ -6,7 +6,7 @@ const { Server } = require("socket.io");
 const MAX = 10; // máximo de pessoas na call
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" } });
+const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" }, maxHttpBufferSize: 30 * 1024 * 1024 });
 app.use(express.static("public"));
 
 // A autenticação fica desligada por padrão para não depender de PostgreSQL.
@@ -200,6 +200,20 @@ io.on("connection", (s) => {
       return ack({ error: "Alguém está conectado a esse canal. Peça para todos saírem antes de excluí-lo." });
     r.voiceChannels = r.voiceChannels.filter((c) => c.id !== id);
     pushInfo(s.data.room); ack({ ok: true });
+  });
+
+  s.on("attachment", ({ ch, name, type, data }) => {
+    const r = rooms.get(s.data.room);
+    if (!r || !r.channels.some((c) => c.id === ch) || typeof data !== "string") return;
+    const match = data.match(/^data:([\w.+/-]+);base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) return s.emit("attachment-error", { error: "Arquivo inválido." });
+    const bytes = Buffer.byteLength(match[2], "base64");
+    if (bytes > 20 * 1024 * 1024) return s.emit("attachment-error", { error: "O limite é 20 MB por arquivo." });
+    name = clean(name, 180) || "arquivo";
+    type = clean(type || match[1], 120);
+    const m = { pid: s.data.pid, name: s.data.name, text: "", time: Date.now(), ch, attachment: { name, type, data, size: bytes } };
+    const list = (r.msgs[ch] ??= []); list.push(m); if (list.length > 50) list.shift();
+    io.to("r:" + s.data.room).emit("msg", m);
   });
 
   // ----- cargos -----
