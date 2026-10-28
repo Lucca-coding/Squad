@@ -5,8 +5,8 @@
   "author": "SQUAD",
   "main": "main.js",
   "scripts": {
-    "prepare-app": "node -e \"require('fs').cpSync('../public','app',{recursive:true})\"",
-    "start": "node server.js",
+    "prepare-app": "node -e \"const fs=require('fs');fs.rmSync('app',{recursive:true,force:true});fs.mkdirSync('app');for(const f of ['index.html','config.js','logo.png','mark.png','icon.png'])if(fs.existsSync(f))fs.copyFileSync(f,'app/'+f)\"",
+    "start": "npm run prepare-app && electron .",
     "dist": "npm run prepare-app && electron-builder --publish never"
   },
   "devDependencies": {
