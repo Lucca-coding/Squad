@@ -300,9 +300,12 @@ function render() {
   renderChannels(); renderVoice(); renderMembers();
 }
 function delX(c) {
-  const x = el("span", "x", "✕"); x.title = "Apagar canal";
-  x.onclick = (e) => { e.stopPropagation(); if (confirm(`Apagar o canal ${c.name}?`)) socket.emit("delete-channel", { id: c.id }); };
-  return x;
+  const wrap=el("span","line");wrap.style.gap="4px";
+  const rename=el("span","x","✏️");rename.title="Renomear canal";
+  rename.onclick=(e)=>{e.stopPropagation();const n=prompt("Novo nome do canal (emoji permitido):",c.name);if(n&&n.trim())socket.emit("rename-channel",{id:c.id,name:n.trim()});};
+  const x=el("span","x","✕");x.title="Apagar canal";
+  x.onclick=(e)=>{e.stopPropagation();if(confirm(`Apagar o canal ${c.name}?`))socket.emit("delete-channel",{id:c.id});};
+  wrap.append(rename,x);return wrap;
 }
 function renderChannels() {
   $("tch").innerHTML = "";
@@ -319,7 +322,7 @@ function renderVoice() {
   $("vch").innerHTML = "";
   info.channels.filter((c) => c.type === "voice").forEach((c) => {
     const users = voiceMap[c.id] || [];
-    const h = el("div", "ch" + (voiceCh === c.id ? " on" : "")); h.append(el("span", "nm", `🔊 ${c.name} (${users.length}/${MAX})`));
+    const h = el("div", "ch" + (voiceCh === c.id ? " on" : "")); h.append(el("span", "nm", `🔊 ${c.name} (${users.length}/${c.maxUsers || MAX})`));
     if (canManage()) h.append(delX(c));
     h.onclick = () => joinVoice(c.id); $("vch").appendChild(h);
     users.forEach((u) => {
@@ -472,10 +475,13 @@ $("input").addEventListener("paste", (e) => {
 
 // criar canais (texto e voz)
 function mkChan(type) {
-  const n=prompt(type==="voice"?"Nome do novo canal de voz (emoji permitido):":"Nome do novo canal de texto (emoji permitido):");
-  if(!n||!n.trim())return;let maxUsers=10;
+  const n=prompt(type==="voice"?"Nome do novo canal de voz:":"Nome do novo canal de texto:");
+  if(!n||!n.trim())return;
+  const emoji=prompt("Emoji opcional para o canal (ex.: 🎮, 💬, 🎃, 🎄). Deixe vazio para não usar:","")||"";
+  const channelName=(emoji.trim()?emoji.trim()+" ":"")+n.trim();
+  let maxUsers=10;
   if(type==="voice"){const raw=prompt("Limite de pessoas (2 a 10):","10");if(raw===null)return;maxUsers=Number(raw);if(!Number.isInteger(maxUsers)||maxUsers<2||maxUsers>10)return alert("Escolha um número inteiro de 2 a 10.");}
-  socket.emit("create-channel",{name:n,type,maxUsers},(r)=>(r.error?alert(r.error):type==="text"&&openChannel(r.id)));
+  socket.emit("create-channel",{name:channelName,type,maxUsers},(r)=>(r.error?alert(r.error):type==="text"&&openChannel(r.id)));
 }
 $("badd").onclick = () => mkChan("text");
 $("baddv").onclick = () => mkChan("voice");
