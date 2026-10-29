@@ -90,7 +90,9 @@ body.nomem #members{display:none}
 .card label{font-size:12px;color:var(--mut);text-transform:uppercase;margin-top:6px}
 .card input{padding:10px;border-radius:6px;border:0;background:var(--p2);color:var(--txt);flex:1;min-width:0}
 .line .btn{flex:1}#lerr{color:var(--red);min-height:1.2em}#lstatus{color:var(--mut)}
-.hero{text-align:center;margin-bottom:6px}.hero img{width:80%;max-width:270px;display:block;margin:0 auto;filter:drop-shadow(0 0 22px #7c3aed66)}
+.hero{text-align:center;margin-bottom:6px}.hero img{width:80%;max-width:270px;max-height:150px;height:auto;object-fit:contain;display:block;margin:0 auto;filter:drop-shadow(0 0 22px #7c3aed66)}
+#brand img{width:auto;max-width:36px;object-fit:contain}
+#screen-quality-modal .mbox{width:min(560px,94vw)}.quality-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}.quality-option{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:14px;background:var(--p2);border:1px solid var(--line);border-radius:10px;min-height:76px}.quality-option:hover,.quality-option:focus{border-color:var(--neon);background:var(--hov)}.quality-option.selected{border-color:var(--neon);box-shadow:0 0 0 1px var(--neon)}.quality-option input{margin-top:4px;accent-color:var(--pur)}.quality-option strong{display:block}.quality-option small{display:block;color:var(--mut);margin-top:4px}@media(max-width:460px){.quality-grid{grid-template-columns:1fr}}
 .slogan{font-size:12px;color:var(--mut);letter-spacing:.05em;margin-top:4px}
 .dot.online{background:var(--neon);box-shadow:0 0 6px var(--neon)}.dot.away{background:#fbbf24}.dot.dnd{background:#f23f43}.dot.inv{background:#4b4866}
 #me .dot{border-color:#0c0c14}
@@ -134,7 +136,7 @@ if((m===10&&n>=5)||(m===11&&n<=5))season="halloween";
 if((m===11&&n>=25)||m===12||(m===1&&n<=5))season="natal";
 if(season!=="normal")document.documentElement.dataset.season=season;
 const logo=season==="halloween"?"halloween.png":season==="natal"?"natal.png":"logo.png";
-document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("#lobby .hero img, #brand img").forEach(i=>i.src=logo);});
+document.addEventListener("DOMContentLoaded",()=>{const hero=document.querySelector("#lobby .hero img");if(hero){hero.onerror=()=>{hero.onerror=null;hero.src="./logo.png";};hero.src="./"+logo;}const brand=document.querySelector("#brand img");if(brand){brand.onerror=()=>{brand.onerror=null;brand.src="./mark.png";};brand.src="./mark.png";}const icon=document.querySelector("link[rel=icon]");if(icon)icon.href="./"+(season==="normal"?"mark.png":logo);});
 })();
 </script>
 <div id="lobby"><div class="card">
@@ -182,6 +184,14 @@ document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("#lo
 <div id="main">
   <div id="bar"><span id="title"></span><button class="ic" id="btnmem" title="Membros">👥</button></div>
   <div id="grid"></div><div id="inline-watch" hidden></div>
+<div class="modal" id="screen-quality-modal" hidden><div class="mbox"><div class="mh"><h3>Qualidade do compartilhamento</h3><button class="ic" id="screen-quality-close" aria-label="Fechar">✕</button></div><div class="sub">Escolha a qualidade antes de selecionar a tela ou janela.</div><div class="quality-grid" id="screen-quality-options">
+<label class="quality-option selected"><input type="radio" name="screen-quality" value="1" checked><span><strong>720p · 30 FPS</strong><small>Leve · recomendado para conexões lentas</small></span></label>
+<label class="quality-option"><input type="radio" name="screen-quality" value="2"><span><strong>720p · 60 FPS</strong><small>Movimento mais fluido</small></span></label>
+<label class="quality-option"><input type="radio" name="screen-quality" value="3"><span><strong>1080p · 30 FPS</strong><small>Boa nitidez e uso moderado</small></span></label>
+<label class="quality-option"><input type="radio" name="screen-quality" value="4"><span><strong>1080p · 60 FPS</strong><small>Alta nitidez e fluidez</small></span></label>
+<label class="quality-option"><input type="radio" name="screen-quality" value="5"><span><strong>4K · 30 FPS</strong><small>Uso elevado de rede e processamento</small></span></label>
+<label class="quality-option"><input type="radio" name="screen-quality" value="6"><span><strong>4K · 60 FPS</strong><small>Máxima qualidade · exige muito da conexão</small></span></label>
+</div><div class="line" style="justify-content:flex-end"><button class="ic" id="screen-quality-cancel" style="width:auto;padding:0 16px">Cancelar</button><button class="btn1" id="screen-quality-confirm">Continuar</button></div></div></div>
   <div id="msgs"></div>
   <div id="upstat"></div>
   <div id="form"><button class="ic" id="bemoji" title="Inserir emoji">😀</button><button class="ic" id="battach" title="Enviar imagem ou arquivo (até 20 MB)">📎</button><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div>
@@ -313,7 +323,7 @@ function renderChannels() {
   texts.forEach((c) => {
     const d = el("div", "ch" + (c.id === curCh ? " on" : "") + (unread[c.id] ? " unread" : ""));
     d.append(el("span", "nm", "# " + c.name));
-    if (canManage() && texts.length > 1) d.append(delX(c));
+    if (canManage()) d.append(delX(c));
     d.onclick = () => openChannel(c.id); $("tch").appendChild(d);
   });
   $("badd").hidden = $("baddv").hidden = $("broles").hidden = !canManage();
@@ -721,14 +731,15 @@ function removeMedia(stream) {
     sig(id, { meta: { id: stream.id, kind: null } });
   });
 }
+function chooseScreenQuality(){return new Promise(resolve=>{const modal=$("screen-quality-modal"),options=[...document.querySelectorAll('input[name="screen-quality"]')];const finish=value=>{modal.hidden=true;resolve(value);};options.forEach(input=>{input.onchange=()=>{document.querySelectorAll(".quality-option").forEach(l=>l.classList.toggle("selected",l.contains(input)));};});$("screen-quality-confirm").onclick=()=>finish((options.find(x=>x.checked)||{}).value||"1");$("screen-quality-cancel").onclick=$("screen-quality-close").onclick=()=>finish(null);modal.onclick=e=>{if(e.target===modal)finish(null);};modal.hidden=false;});}
 async function toggleVid(kind) {
   if (!voiceCh) return;
   if (vids[kind]) return stopVid(kind);
   let s;
   try {
     if(kind==="screen"){
- const choice=prompt("Qualidade da tela?\n1 720p/30 FPS (leve)\n2 720p/60 FPS\n3 1080p/30 FPS\n4 1080p/60 FPS\n5 4K/30 FPS\n6 4K/60 FPS","1");if(choice===null)return;
- const p={"1":[1280,720,30,1200000],"2":[1280,720,60,2200000],"3":[1920,1080,30,2500000],"4":[1920,1080,60,4500000],"5":[3840,2160,30,8000000],"6":[3840,2160,60,12000000]}[choice];if(!p)return alert("Escolha de 1 a 6.");
+ const choice=await chooseScreenQuality();if(!choice)return;
+ const p={"1":[1280,720,30,1200000],"2":[1280,720,60,2200000],"3":[1920,1080,30,2500000],"4":[1920,1080,60,4500000],"5":[3840,2160,30,8000000],"6":[3840,2160,60,12000000]}[choice];
  s=await navigator.mediaDevices.getDisplayMedia({video:{width:{ideal:p[0]},height:{ideal:p[1]},frameRate:{ideal:p[2],max:p[2]}},audio:true});s.getVideoTracks()[0].applyConstraints({width:{ideal:p[0]},height:{ideal:p[1]},frameRate:{ideal:p[2],max:p[2]}}).catch(()=>{});window.__squadScreenBitrate=p[3];
 }else s=await navigator.mediaDevices.getUserMedia({video:true});
   } catch { return; }
