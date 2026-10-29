@@ -7,6 +7,11 @@ function createWindow() {
     webPreferences: { contextIsolation: true },
   });
   win.loadFile(path.join(__dirname, "app", "index.html"));
+  // janela de "assistir transmissão" aberta pelo app
+  win.webContents.setWindowOpenHandler(() => ({
+    action: "allow",
+    overrideBrowserWindowOptions: { width: 1100, height: 680, autoHideMenuBar: true, backgroundColor: "#000000", title: "SQUAD" },
+  }));
 }
 
 app.whenReady().then(() => {
