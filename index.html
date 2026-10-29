@@ -400,7 +400,7 @@ const addMsg = (m) => {
   d.append(a, box);
   if (myPid && (m.pid === myPid || canManage())) {
     const x = el("button", "del", "🗑️"); x.title = "Apagar mensagem";
-    x.onclick = () => confirm("Apagar esta mensagem?") && socket.emit("delete-msg", { ch: m.ch, id: m.id }); d.append(x);
+    x.onclick = () => { if (confirm("Apagar esta mensagem?")) socket.emit("delete-msg", { ch: m.ch, id: m.id }); }; d.append(x);
   }
   $("msgs").appendChild(d); $("msgs").scrollTop = $("msgs").scrollHeight;
 };
@@ -458,7 +458,7 @@ function renderRoles() {
     const row = el("div", "rrow"), dot = el("span", "rdot"); dot.style.background = r.color;
     const n = el("span", "nm", r.name); n.style.color = r.color; row.append(dot, n);
     if (r.id === "admin") row.append(el("small", "", "padrão"));
-    else { const x = el("button", "ic", "✕"); x.onclick = () => confirm(`Apagar o cargo ${r.name}?`) && socket.emit("delete-role", { id: r.id }); row.append(x); }
+    else { const x = el("button", "ic", "✕"); x.onclick = () => { if (confirm(`Apagar o cargo ${r.name}?`)) socket.emit("delete-role", { id: r.id }); }; row.append(x); }
     l.append(row);
   });
 }
@@ -881,7 +881,7 @@ $("me").onclick = (e) => {
 $("pav").onclick = $("pchange").onclick = () => pickPhoto((d) => { profile.avatar = d; paint($("pav"), d, profile.name); saveProfile(); });
 $("premove").onclick = () => { profile.avatar = null; paint($("pav"), null, profile.name); saveProfile(); };
 const saveName = () => { const n = $("pname").value.trim(); if (!n) return; profile.name = n; saveProfile(); $("profpop").hidden = true; };
-$("psave").onclick = saveName; $("pname").onkeydown = (e) => e.key === "Enter" && saveName();
+$("psave").onclick = saveName; $("pname").addEventListener("keydown", (e) => { if (e.key === "Enter") saveName(); });
 
 // ---------- salas ----------
 function enterRoom(code, password = "") {
@@ -939,7 +939,7 @@ $("sshare").onclick = () => navigator.share({ title: "SQUAD", text: inviteText()
 // ---------- janelas / cliques globais ----------
 function closeModals() { closeSettings(); $("rolemodal").hidden = true; }
 document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = closeModals));
-document.querySelectorAll(".modal").forEach((m) => (m.onclick = (e) => e.target === m && closeModals()));
+document.querySelectorAll(".modal").forEach((m) => m.addEventListener("click", (e) => { if (e.target === m) closeModals(); }));
 document.addEventListener("keydown", (e) => e.key === "Escape" && closeModals());
 document.addEventListener("click", (e) => {
   if (!e.target.closest("#menu")) $("menu").hidden = true;
