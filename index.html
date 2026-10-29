@@ -111,9 +111,32 @@ body.nomem #members{display:none}
 #meter{position:relative}#thrmark{position:absolute;top:-4px;bottom:-4px;width:3px;background:#fbbf24;border-radius:2px}
 #meter.closed i.on{background:#6b5f99;box-shadow:none}
 .watch{background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700}
+
+:root[data-season="halloween"]{--pur:#f97316;--sel:#3b2416;--hov:#24160f;--inp:#1b120e;--line:#3b2416}
+:root[data-season="halloween"] .btn1,:root[data-season="halloween"] .card button,:root[data-season="halloween"] .btn{background:linear-gradient(135deg,#f97316,#9a3412)}
+:root[data-season="halloween"] #lobby{background:radial-gradient(ellipse at 50% 0%,#422006 0,#07070c 62%)}
+:root[data-season="natal"]{--pur:#b91c1c;--sel:#3b171b;--hov:#241014;--inp:#1b0e11;--line:#3b171b}
+:root[data-season="natal"] .btn1,:root[data-season="natal"] .card button,:root[data-season="natal"] .btn{background:linear-gradient(135deg,#b91c1c,#7f1d1d)}
+:root[data-season="natal"] #lobby{background:radial-gradient(ellipse at 50% 0%,#450a0a 0,#07070c 62%)}
+.msg-link{color:var(--neon);text-decoration:underline;overflow-wrap:anywhere}
+#emoji-pop{position:fixed;z-index:50;background:var(--p1);border:1px solid var(--line);border-radius:10px;padding:8px;display:grid;grid-template-columns:repeat(6,36px);gap:4px;box-shadow:0 8px 24px #0009}
+#emoji-pop button{background:var(--inp);border-radius:6px;padding:5px;font-size:20px}
+.m .edit{position:absolute;right:42px;top:0;display:none;background:var(--inp);border-radius:6px;padding:3px 7px}
+.m:hover .edit{display:block}
+#inline-watch{display:none;padding:8px;background:#050507;border-bottom:1px solid var(--line)}
+#inline-watch video{width:100%;max-height:65vh;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
+<script>
+(()=>{const d=new Date(),m=d.getMonth()+1,n=d.getDate();let season="normal";
+if((m===10&&n>=5)||(m===11&&n<=5))season="halloween";
+if((m===11&&n>=25)||m===12||(m===1&&n<=5))season="natal";
+if(season!=="normal")document.documentElement.dataset.season=season;
+const logo=season==="halloween"?"halloween.png":season==="natal"?"natal.png":"logo.png";
+document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("#lobby .hero img").forEach(i=>i.src=logo);});
+})();
+</script>
 <div id="lobby"><div class="card">
   <div class="hero"><img src="logo.png" alt="SQUAD"><div class="slogan">Your Friends. Your Games. Your Squad.</div></div>
   <div class="line" style="align-items:center"><div id="lav" class="av huge pic" title="Escolher foto de perfil">📷</div><input id="lname" placeholder="Seu apelido" maxlength="20"></div>
@@ -158,15 +181,15 @@ body.nomem #members{display:none}
 
 <div id="main">
   <div id="bar"><span id="title"></span><button class="ic" id="btnmem" title="Membros">👥</button></div>
-  <div id="grid"></div>
+  <div id="grid"></div><div id="inline-watch" hidden></div>
   <div id="msgs"></div>
   <div id="upstat"></div>
-  <div id="form"><button class="ic" id="battach" title="Enviar imagem ou arquivo (até 20 MB)">📎</button><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div>
+  <div id="form"><button class="ic" id="bemoji" title="Inserir emoji">😀</button><button class="ic" id="battach" title="Enviar imagem ou arquivo (até 20 MB)">📎</button><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div>
   <input type="file" id="ufile" multiple hidden>
 </div>
 <div id="members"></div>
 
-<input type="file" id="pfile" accept="image/*" hidden>
+<input type="file" id="pfile" accept="image/*" hidden><div id="emoji-pop" hidden></div>
 <div class="pop" id="menu" hidden></div>
 <div class="pop" id="card" hidden style="width:250px"></div>
 <div class="pop" id="profpop" hidden style="width:270px">
@@ -240,7 +263,7 @@ const LS = {
 let profile = Object.assign({ name: "", avatar: null, status: "online" }, LS.get("profile", {}));
 let key = LS.get("squadKey", null); // identidade anônima deste navegador (nunca é mostrada a ninguém)
 if (!key) { key = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()) + "-squad"; LS.set("squadKey", key); }
-const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true, agc: true, gateAuto: false, gateThr: 0, sndJoin: true, sndMute: true, sndOthers: true }, LS.get("audio", {}));
+const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: false, noise: true, agc: true, gateAuto: false, gateThr: 0, sndJoin: true, sndMute: true, sndOthers: true }, LS.get("audio", {}));
 let room = null, myPid = null, info = { channels: [], roles: [], owner: null }, members = {}, curCh = null, unread = {};
 let voiceCh = null, voiceMap = {}, roomPass = "", locked = false; // voiceMap: canal de voz -> pessoas nele
 let micRaw = null, micSrc = null, micGain = null, micGate = null, micAn = null, micStream = null, gateOpen = true, curThr = 0, noiseFloor = 2, muted = false, deaf = false, testing = false;
@@ -380,6 +403,12 @@ function openChannel(id) {
   socket.emit("history", { ch: id }, (msgs) => { if (curCh === id) { $("msgs").innerHTML = ""; msgs.forEach(addMsg); } });
   renderChannels();
 }
+function renderMessageText(body,text){
+ const re=/(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;let last=0,match;
+ while((match=re.exec(text))){if(match.index>last)body.append(document.createTextNode(text.slice(last,match.index)));
+ const raw=match[0],a=document.createElement("a");a.className="msg-link";a.href=raw.startsWith("www.")?"https://"+raw:raw;a.target="_blank";a.rel="noopener noreferrer";a.textContent=raw;body.append(a);last=re.lastIndex;}
+ if(last<text.length)body.append(document.createTextNode(text.slice(last)));
+}
 const addMsg = (m) => {
   const mem = members[m.pid] || {};
   const d = el("div", "m"); d.dataset.mid = m.id;
@@ -387,7 +416,7 @@ const addMsg = (m) => {
   const box = el("div"); box.innerHTML = "<b></b><small></small><div></div>";
   const b = box.querySelector("b"); b.textContent = mem.name || m.name; const c = roleColor(m.pid); if (c) b.style.color = c;
   box.querySelector("small").textContent = new Date(m.time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const body = box.querySelector("div"); body.textContent = m.text; if (!m.text) body.remove();
+  const body = box.querySelector("div"); if(m.text) renderMessageText(body,m.text); else body.remove();
   if (m.file) {
     const f = m.file, url = API + "/files/" + f.id;
     const link = el("a"); link.href = url; link.target = "_blank"; link.rel = "noopener";
@@ -399,6 +428,7 @@ const addMsg = (m) => {
   }
   d.append(a, box);
   if (myPid && (m.pid === myPid || canManage())) {
+    if(m.pid===myPid&&!m.file){const edit=el("button","edit","✏️");edit.title="Editar mensagem";edit.onclick=()=>{const next=prompt("Editar mensagem:",m.text);if(next!==null&&next.trim()&&next.length<=2000)socket.emit("edit-msg",{ch:m.ch,id:m.id,text:next});};d.append(edit);}
     const x = el("button", "del", "🗑️"); x.title = "Apagar mensagem";
     x.onclick = () => { if (confirm("Apagar esta mensagem?")) socket.emit("delete-msg", { ch: m.ch, id: m.id }); }; d.append(x);
   }
@@ -406,6 +436,10 @@ const addMsg = (m) => {
 };
 socket.on("msg", (m) => { if (m.ch === curCh) addMsg(m); else { unread[m.ch] = true; renderChannels(); } });
 socket.on("msg-deleted", ({ ch, id }) => { if (ch === curCh) { const e = document.querySelector(`.m[data-mid="${id}"]`); if (e) e.remove(); } });
+socket.on("msg-edited",(m)=>{if(m.ch!==curCh)return;const old=document.querySelector(`.m[data-mid="${m.id}"]`);if(old){old.remove();addMsg(m);}});
+const EMOJIS=["😀","😂","🥹","😍","😎","😭","😡","👍","👎","❤️","💜","🔥","🎉","✨","👏","🙏","💀","🤝","🤣","😊","🤔","👀","💯","🚀","🎮","💬","✅","❌","⭐","🥳","🎃","🎄"];
+$("bemoji").onclick=(ev)=>{const p=$("emoji-pop");p.innerHTML="";EMOJIS.forEach(em=>{const b=el("button","",em);b.onclick=()=>{const i=$("input"),a=i.selectionStart??i.value.length,z=i.selectionEnd??a;i.value=i.value.slice(0,a)+em+i.value.slice(z);i.focus();i.setSelectionRange(a+em.length,a+em.length);p.hidden=true;};p.append(b);});p.hidden=!p.hidden;if(!p.hidden){const r=ev.currentTarget.getBoundingClientRect();p.style.left=Math.max(8,Math.min(r.left,innerWidth-250))+"px";p.style.bottom=(innerHeight-r.top+8)+"px";}};
+document.addEventListener("click",e=>{if(!$("emoji-pop").contains(e.target)&&e.target!==$("bemoji"))$("emoji-pop").hidden=true;});
 $("input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.target.value.trim() && curCh) { socket.emit("msg", { ch: curCh, text: e.target.value }); e.target.value = ""; }
 });
@@ -438,8 +472,10 @@ $("input").addEventListener("paste", (e) => {
 
 // criar canais (texto e voz)
 function mkChan(type) {
-  const n = prompt(type === "voice" ? "Nome do novo canal de voz:" : "Nome do novo canal de texto:");
-  if (n && n.trim()) socket.emit("create-channel", { name: n, type }, (r) => (r.error ? alert(r.error) : type === "text" && openChannel(r.id)));
+  const n=prompt(type==="voice"?"Nome do novo canal de voz (emoji permitido):":"Nome do novo canal de texto (emoji permitido):");
+  if(!n||!n.trim())return;let maxUsers=10;
+  if(type==="voice"){const raw=prompt("Limite de pessoas (2 a 10):","10");if(raw===null)return;maxUsers=Number(raw);if(!Number.isInteger(maxUsers)||maxUsers<2||maxUsers>10)return alert("Escolha um número inteiro de 2 a 10.");}
+  socket.emit("create-channel",{name:n,type,maxUsers},(r)=>(r.error?alert(r.error):type==="text"&&openChannel(r.id)));
 }
 $("badd").onclick = () => mkChan("text");
 $("baddv").onclick = () => mkChan("voice");
@@ -684,7 +720,11 @@ async function toggleVid(kind) {
   if (vids[kind]) return stopVid(kind);
   let s;
   try {
-    s = kind === "screen" ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }) : await navigator.mediaDevices.getUserMedia({ video: true });
+    if(kind==="screen"){
+ const choice=prompt("Qualidade da tela?\n1 720p/30 FPS (leve)\n2 720p/60 FPS\n3 1080p/30 FPS\n4 1080p/60 FPS\n5 4K/30 FPS\n6 4K/60 FPS","1");if(choice===null)return;
+ const p={"1":[1280,720,30,1200000],"2":[1280,720,60,2200000],"3":[1920,1080,30,2500000],"4":[1920,1080,60,4500000],"5":[3840,2160,30,8000000],"6":[3840,2160,60,12000000]}[choice];if(!p)return alert("Escolha de 1 a 6.");
+ s=await navigator.mediaDevices.getDisplayMedia({video:{width:{ideal:p[0]},height:{ideal:p[1]},frameRate:{ideal:p[2],max:p[2]}},audio:true});s.getVideoTracks()[0].applyConstraints({width:{ideal:p[0]},height:{ideal:p[1]},frameRate:{ideal:p[2],max:p[2]}}).catch(()=>{});window.__squadScreenBitrate=p[3];
+}else s=await navigator.mediaDevices.getUserMedia({video:true});
   } catch { return; }
   vids[kind] = s; s.getVideoTracks()[0].onended = () => stopVid(kind);
   if (kind !== "screen") addMedia(s, kind); // a tela só é enviada para quem clicar em "Assistir"
@@ -716,11 +756,10 @@ function handleWatch(from, on) { // quem transmite recebe o pedido de assistir /
 }
 const applyW = (w) => w.gain && (w.gain.gain.value = w.muted ? 0 : w.vol);
 function watchStream(sid) {
-  const w = { win: null, video: null, who: null, gain: null, vol: 1, muted: false, name: userName(sid) };
-  watching[sid] = w;
-  w.win = window.open("", "squad-watch-" + sid, "width=1100,height=680"); // precisa acontecer dentro do clique
-  if (w.win) buildPopup(w, sid); else alert("O navegador bloqueou a nova janela. A tela vai aparecer dentro da própria página.");
-  sig(sid, { watch: { on: true } });
+ const inline=confirm("Assistir dentro do SQUAD?\nOK = dentro do site; Cancelar = outra janela");
+ const w={win:null,video:null,who:null,gain:null,vol:1,muted:false,name:userName(sid),inline};watching[sid]=w;
+ if(!inline){w.win=window.open("","squad-watch-"+sid,"width=1100,height=680");if(w.win)buildPopup(w,sid);else{w.inline=true;alert("Janela bloqueada; exibindo no SQUAD.");}}
+ sig(sid,{watch:{on:true}});
 }
 function buildPopup(w, sid) {
   const d = w.win.document; d.open();
@@ -741,14 +780,14 @@ function onScreenTrack(id, stream, track) {
     w.gain = ctx.createGain(); ctx.createMediaStreamSource(new MediaStream([track])).connect(w.gain); w.gain.connect(master); applyW(w);
   } else if (w.video) {
     w.video.srcObject = stream; w.video.play().catch(() => {}); w.who.textContent = "Tela de " + w.name;
-  } else addTile("w-" + id, stream, "Tela de " + w.name, id); // sem janela: mostra na própria página
+  } else if(w.inline){const slot=$("inline-watch");slot.hidden=false;slot.style.display="block";slot.innerHTML="";const head=el("div","line");head.style.justifyContent="space-between";head.append(el("b","","Assistindo: "+w.name));const close=el("button","ic","✕");close.onclick=()=>stopWatch(id,true);head.append(close);const v=document.createElement("video");v.autoplay=true;v.playsInline=true;v.controls=true;v.srcObject=stream;w.video=v;slot.append(head,v);v.play().catch(()=>{});} else addTile("w-" + id, stream, "Tela de " + w.name, id); // fallback na página
 }
 function stopWatch(sid, notify) {
   const w = watching[sid]; if (!w) return;
   delete watching[sid]; clearInterval(w.iv);
   if (w.gain) { try { w.gain.disconnect(); } catch {} }
   if (w.win && !w.win.closed) w.win.close();
-  removeTile("w-" + sid);
+  removeTile("w-" + sid); if(w.inline){$("inline-watch").hidden=true;$("inline-watch").style.display="none";$("inline-watch").innerHTML="";}
   if (notify && pcs[sid]) sig(sid, { watch: { on: false } });
   renderVoice();
 }
@@ -760,7 +799,7 @@ function setCaps(pc) { // limita o bitrate: com até 9 espectadores, cada envio 
   pc.getSenders().forEach((s) => {
     if (!s.track || s.track.kind !== "video") return;
     const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-    p.encodings[0].maxBitrate = vids.screen && vids.screen.getVideoTracks()[0] === s.track ? 1200000 : 400000;
+    p.encodings[0].maxBitrate = vids.screen && vids.screen.getVideoTracks()[0] === s.track ? (window.__squadScreenBitrate || 1200000) : 400000;
     s.setParameters(p).catch(() => {});
   });
 }
