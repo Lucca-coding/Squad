@@ -101,6 +101,16 @@ body.nomem #members{display:none}
 .file{display:inline-block;margin-top:6px;padding:8px 12px;background:var(--inp);border-radius:8px;color:var(--neon);text-decoration:none}
 #form{display:flex;gap:8px;align-items:center}#form .ic{width:40px;height:40px}
 #upstat{padding:0 16px;font-size:12px;color:var(--mut)}#upstat:empty{display:none}
+.swr{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:16px}
+.swr small{display:block;color:var(--mut);margin-top:3px;font-size:13px}
+.sw{position:relative;width:44px;height:26px;flex:none}
+.sw input{opacity:0;width:100%;height:100%;position:absolute;margin:0;cursor:pointer;z-index:1}
+.sw i{position:absolute;inset:0;background:#3a3558;border-radius:13px;transition:.15s}
+.sw i::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s}
+.sw input:checked+i{background:var(--pur);box-shadow:0 0 10px #7c3aed88}.sw input:checked+i::after{left:21px}
+#meter{position:relative}#thrmark{position:absolute;top:-4px;bottom:-4px;width:3px;background:#fbbf24;border-radius:2px}
+#meter.closed i.on{background:#6b5f99;box-shadow:none}
+.watch{background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700}
 </style>
 </head>
 <body>
@@ -194,8 +204,11 @@ body.nomem #members{display:none}
     <div><label>Volume do alto-falante</label><input type="range" id="vspk" min="0" max="100"></div>
   </div>
   <div class="line" style="align-items:center;margin-top:20px"><button class="btn1" id="btest">Teste do microfone</button><div id="meter"></div></div>
-  <label style="text-transform:none"><input type="checkbox" id="echo"> Cancelamento de eco</label>
-  <label style="text-transform:none"><input type="checkbox" id="noise"> Supressão de ruído</label>
+  <div class="swr"><div><b>Cancelamento de eco</b><small>Evita que o som dos alto-falantes volte pelo microfone. Se sua voz estiver falhando, tente desligar (use fones).</small></div><div class="sw"><input type="checkbox" id="echo"><i></i></div></div>
+  <div class="swr"><div><b>Supressão de ruído</b><small>Reduz barulhos de fundo, como teclado e ventilador.</small></div><div class="sw"><input type="checkbox" id="noise"><i></i></div></div>
+  <div class="swr"><div><b>Controle automático de ganho</b><small>Ajusta o volume do microfone sozinho. Se o volume "oscilar" enquanto você fala, desligue.</small></div><div class="sw"><input type="checkbox" id="agc"><i></i></div></div>
+  <div class="swr"><div><b>Ajustar automaticamente a sensibilidade de entrada</b><small>Controla quanto som o SQUAD transmite do seu microfone. Fale para testar: se o medidor estiver cheio, está transmitindo sua voz.</small></div><div class="sw"><input type="checkbox" id="gateAuto"><i></i></div></div>
+  <div id="gateman"><label>Sensibilidade de entrada (0 = transmite tudo)</label><input type="range" id="gateThr" min="0" max="100"></div>
   <small style="color:var(--mut)">Use fones no teste para evitar eco.</small>
   <label>Sons</label>
   <label style="text-transform:none;margin:4px 0"><input type="checkbox" id="sndJoin"> Som quando alguém entra ou sai da call</label>
@@ -227,12 +240,12 @@ const LS = {
 let profile = Object.assign({ name: "", avatar: null, status: "online" }, LS.get("profile", {}));
 let key = LS.get("squadKey", null); // identidade anônima deste navegador (nunca é mostrada a ninguém)
 if (!key) { key = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()) + "-squad"; LS.set("squadKey", key); }
-const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true, sndJoin: true, sndMute: true, sndOthers: true }, LS.get("audio", {}));
+const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true, agc: true, gateAuto: false, gateThr: 0, sndJoin: true, sndMute: true, sndOthers: true }, LS.get("audio", {}));
 let room = null, myPid = null, info = { channels: [], roles: [], owner: null }, members = {}, curCh = null, unread = {};
 let voiceCh = null, voiceMap = {}, roomPass = "", locked = false; // voiceMap: canal de voz -> pessoas nele
-let micRaw = null, micSrc = null, micGain = null, micAn = null, micStream = null, muted = false, deaf = false, testing = false;
+let micRaw = null, micSrc = null, micGain = null, micGate = null, micAn = null, micStream = null, gateOpen = true, curThr = 0, noiseFloor = 2, muted = false, deaf = false, testing = false;
 const vids = { camera: null, screen: null };
-const pcs = {}, gains = {}, prefs = {}, analysers = {}, speaking = {}, meta = {};
+const pcs = {}, gains = {}, prefs = {}, analysers = {}, speaking = {}, meta = {}, watching = {};
 let ctx, master, sfxBus;
 
 // ---------- utilidades ----------
@@ -290,7 +303,14 @@ function renderVoice() {
       const r = el("div", "vu");
       const nm = el("span", "nm", u.name + (u.id === socket.id ? " (você)" : "")); const col = roleColor(u.pid); if (col) nm.style.color = col;
       r.append(avatar(u.pid, u.name, u.id), nm);
-      if (u.screen) r.append(el("span", "badge", "AO VIVO"));
+      if (u.screen) {
+        r.append(el("span", "badge", "AO VIVO"));
+        if (u.id !== socket.id) {
+          const wb = el("button", "watch", watching[u.id] ? "Parar" : "Assistir");
+          wb.onclick = (e) => { e.stopPropagation(); if (watching[u.id]) stopWatch(u.id, true); else watchStream(u.id); renderVoice(); };
+          r.append(wb);
+        }
+      }
       if (u.cam) r.append(el("span", "st", "📷"));
       if (u.muted) r.append(Object.assign(el("span", "st", "🔇"), { title: "Microfone mutado" }));
       if (u.deafened) r.append(Object.assign(el("span", "st", "🎧🚫"), { title: "Sem áudio" }));
@@ -453,7 +473,7 @@ function initAudio() {
   if (ctx) return ctx.resume();
   ctx = new AudioContext(); master = ctx.createGain(); master.connect(ctx.destination);
   sfxBus = ctx.createGain(); sfxBus.connect(ctx.destination); // sons de aviso: não somem quando você ensurdece
-  applyVol(); applySink(); setInterval(tick, 120);
+  applyVol(); applySink(); setInterval(tick, 120); setInterval(gateStep, 20);
 }
 function applyVol() { if (!master) return; master.gain.value = deaf ? 0 : set.spkVol; sfxBus.gain.value = set.spkVol; }
 function applySink() { try { ctx && ctx.setSinkId && ctx.setSinkId(set.spk || "").catch(() => {}); } catch {} }
@@ -464,6 +484,8 @@ function tick() {
   if (!$("setmodal").hidden && micAn) {
     const n = Math.round(Math.min(1, level(micAn) / 60) * 40);
     document.querySelectorAll("#meter i").forEach((b, i) => b.classList.toggle("on", i < n));
+    $("meter").classList.toggle("closed", !gateOpen);
+    $("thrmark").hidden = curThr <= 0; $("thrmark").style.left = Math.min(100, (curThr / 60) * 100) + "%";
   }
 }
 function watch(id, stream) {
@@ -506,22 +528,39 @@ function diffSounds(prev, cur) {
   prev.forEach((u) => { if (u.id !== socket.id && !cur.some((c) => c.id === u.id)) sfx("leave", "call"); });
 }
 
+// Porta de sensibilidade: só transmite quando o som passa do limite (automático ou manual).
+// Padrão = desligada (limite 0). Segura 0,4 s depois da fala para não cortar o fim das palavras.
+let gateHold = 0;
+function gateStep() {
+  if (!micAn || !micGate) return;
+  const lv = level(micAn); // 0..128
+  let thr = 0;
+  if (set.gateAuto) { noiseFloor = lv < noiseFloor ? lv : noiseFloor + (lv - noiseFloor) * 0.002; thr = Math.min(30, noiseFloor * 3 + 3); }
+  else thr = set.gateThr * 60;
+  curThr = thr;
+  const now = performance.now();
+  if (lv > thr) gateHold = now + 400;
+  gateOpen = thr <= 0 || now < gateHold;
+  micGate.gain.setTargetAtTime(gateOpen ? 1 : 0, ctx.currentTime, gateOpen ? 0.005 : 0.04);
+}
+
 // microfone -> ganho (volume do microfone) -> faixa enviada aos outros
 function closeMic() {
   if (micRaw) micRaw.getTracks().forEach((t) => t.stop());
   try { micSrc && micSrc.disconnect(); } catch {}
-  micRaw = micSrc = micGain = micAn = micStream = null; testing = false; $("btest").textContent = "Teste do microfone";
+  micRaw = micSrc = micGain = micGate = micAn = micStream = null; testing = false; $("btest").textContent = "Teste do microfone";
 }
 async function openMic() {
   closeMic(); await initAudio();
   try {
     micRaw = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: set.mic ? { exact: set.mic } : undefined, echoCancellation: set.echo, noiseSuppression: set.noise },
+      audio: { deviceId: set.mic ? { exact: set.mic } : undefined, echoCancellation: set.echo, noiseSuppression: set.noise, autoGainControl: set.agc },
     });
   } catch { micRaw = null; if (set.mic) { set.mic = null; LS.set("audio", set); return openMic(); } return false; }
   micSrc = ctx.createMediaStreamSource(micRaw); micGain = ctx.createGain(); micGain.gain.value = set.micVol;
+  micGate = ctx.createGain(); noiseFloor = 2; gateOpen = true;
   const dest = ctx.createMediaStreamDestination(); micAn = ctx.createAnalyser(); micAn.fftSize = 512;
-  micSrc.connect(micGain); micGain.connect(dest); micGain.connect(micAn);
+  micSrc.connect(micGain); micGain.connect(micGate); micGate.connect(dest); micGain.connect(micAn);
   micStream = dest.stream; applyMic(); return true;
 }
 const applyMic = () => micStream && (micStream.getAudioTracks()[0].enabled = !muted && !deaf);
@@ -548,6 +587,7 @@ $("bset").onclick = async () => {
   await initAudio();
   $("vmic").value = set.micVol * 100; $("vspk").value = set.spkVol * 100; $("echo").checked = set.echo; $("noise").checked = set.noise;
   ["sndJoin", "sndMute", "sndOthers"].forEach((k) => ($(k).checked = set[k]));
+  $("agc").checked = set.agc; $("gateAuto").checked = set.gateAuto; $("gateThr").value = set.gateThr * 100; $("gateman").hidden = set.gateAuto;
   $("setmodal").hidden = false;
   if (!micStream) await openMic();
   await fillDevices();
@@ -555,18 +595,22 @@ $("bset").onclick = async () => {
 function closeSettings() {
   if ($("setmodal").hidden) return;
   $("setmodal").hidden = true;
-  if (testing) { try { micGain.disconnect(master); } catch {} testing = false; $("btest").textContent = "Teste do microfone"; }
+  if (testing) { try { micGate.disconnect(master); } catch {} testing = false; $("btest").textContent = "Teste do microfone"; }
   if (!voiceCh) closeMic();
 }
 $("selmic").onchange = async () => { set.mic = $("selmic").value || null; LS.set("audio", set); await swapMic(); };
 $("selspk").onchange = () => { set.spk = $("selspk").value || null; LS.set("audio", set); applySink(); };
 $("vmic").oninput = () => { set.micVol = $("vmic").value / 100; if (micGain) micGain.gain.value = set.micVol; LS.set("audio", set); };
 $("vspk").oninput = () => { set.spkVol = $("vspk").value / 100; applyVol(); LS.set("audio", set); };
-$("echo").onchange = $("noise").onchange = async () => { set.echo = $("echo").checked; set.noise = $("noise").checked; LS.set("audio", set); await swapMic(); };
+$("echo").onchange = $("noise").onchange = $("agc").onchange = async () => {
+  set.echo = $("echo").checked; set.noise = $("noise").checked; set.agc = $("agc").checked; LS.set("audio", set); await swapMic();
+};
+$("gateAuto").onchange = () => { set.gateAuto = $("gateAuto").checked; $("gateman").hidden = set.gateAuto; LS.set("audio", set); };
+$("gateThr").oninput = () => { set.gateThr = $("gateThr").value / 100; LS.set("audio", set); };
 $("btest").onclick = async () => {
   if (!micStream && !(await openMic())) return alert("Sem acesso ao microfone.");
   testing = !testing;
-  if (testing) micGain.connect(master); else micGain.disconnect(master);
+  if (testing) micGate.connect(master); else micGate.disconnect(master);
   $("btest").textContent = testing ? "Parar teste" : "Teste do microfone";
 };
 navigator.mediaDevices && (navigator.mediaDevices.ondevicechange = () => !$("setmodal").hidden && fillDevices());
@@ -643,7 +687,8 @@ async function toggleVid(kind) {
     s = kind === "screen" ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }) : await navigator.mediaDevices.getUserMedia({ video: true });
   } catch { return; }
   vids[kind] = s; s.getVideoTracks()[0].onended = () => stopVid(kind);
-  addMedia(s, kind); addTile("self-" + kind, s, kind === "screen" ? "Sua tela" : "Sua câmera", socket.id);
+  if (kind !== "screen") addMedia(s, kind); // a tela só é enviada para quem clicar em "Assistir"
+  addTile("self-" + kind, s, kind === "screen" ? "Sua tela" : "Sua câmera", socket.id);
   sendState(); ui();
 }
 function stopVid(kind) {
@@ -653,6 +698,61 @@ function stopVid(kind) {
 }
 $("bcam").onclick = () => toggleVid("camera");
 $("bscr").onclick = () => toggleVid("screen");
+
+// ----- assistir uma transmissão de tela (nova janela) -----
+// Quem transmite só envia o vídeo para quem pediu para assistir (economiza o upload).
+function updateWatchers() {
+  const s = vids.screen, t = $("t-self-screen"); if (!s || !t) return;
+  const n = Object.values(pcs).filter(({ pc }) => pc.getSenders().some((x) => x.track && s.getTracks().includes(x.track))).length;
+  t.querySelector("span").textContent = "Sua tela" + (n ? ` — ${n} assistindo` : "");
+}
+function handleWatch(from, on) { // quem transmite recebe o pedido de assistir / parar
+  const st = pcs[from], s = vids.screen; if (!st || !s) return;
+  const mine = (x) => x.track && s.getTracks().includes(x.track);
+  const has = st.pc.getSenders().some(mine);
+  if (on && !has) { sig(from, { meta: { id: s.id, kind: "screen" } }); s.getTracks().forEach((t) => st.pc.addTrack(t, s)); }
+  if (!on && has) st.pc.getSenders().filter(mine).forEach((x) => st.pc.removeTrack(x));
+  updateWatchers();
+}
+const applyW = (w) => w.gain && (w.gain.gain.value = w.muted ? 0 : w.vol);
+function watchStream(sid) {
+  const w = { win: null, video: null, who: null, gain: null, vol: 1, muted: false, name: userName(sid) };
+  watching[sid] = w;
+  w.win = window.open("", "squad-watch-" + sid, "width=1100,height=680"); // precisa acontecer dentro do clique
+  if (w.win) buildPopup(w, sid); else alert("O navegador bloqueou a nova janela. A tela vai aparecer dentro da própria página.");
+  sig(sid, { watch: { on: true } });
+}
+function buildPopup(w, sid) {
+  const d = w.win.document; d.open();
+  d.write('<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#000;color:#e8e6f5;font:14px system-ui}video{width:100%;height:calc(100% - 52px);object-fit:contain;display:block;background:#000}#bar{height:52px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#0f0f18;border-top:1px solid #2a1650}#who{flex:1}button{background:#1a1630;color:#e8e6f5;border:0;border-radius:6px;padding:7px 12px;cursor:pointer;font:inherit}#bx{background:#7c3aed}input{accent-color:#7c3aed}</style><video id="v" autoplay playsinline muted></video><div id="bar"><span id="who"></span><button id="bm" title="Mutar o áudio da transmissão">🔊</button><input id="bv" type="range" min="0" max="100" value="100"><button id="bf">Tela cheia</button><button id="bx">Parar de assistir</button></div>');
+  d.close(); d.title = "Tela de " + w.name + " — SQUAD";
+  w.video = d.getElementById("v"); w.who = d.getElementById("who"); w.who.textContent = "Tela de " + w.name + " (conectando…)";
+  const bm = d.getElementById("bm");
+  bm.onclick = () => { w.muted = !w.muted; applyW(w); bm.textContent = w.muted ? "🔇" : "🔊"; };
+  d.getElementById("bv").oninput = (e) => { w.vol = e.target.value / 100; applyW(w); };
+  d.getElementById("bf").onclick = () => w.video.requestFullscreen && w.video.requestFullscreen();
+  d.getElementById("bx").onclick = () => stopWatch(sid, true);
+  w.iv = setInterval(() => { if (w.win.closed) stopWatch(sid, true); }, 1000); // fechou a janela = parou de assistir
+}
+function onScreenTrack(id, stream, track) {
+  const w = watching[id]; if (!w) return;
+  if (track.kind === "audio") {
+    const a = new Audio(); a.muted = true; a.srcObject = stream; a.play().catch(() => {}); // necessário no Chrome
+    w.gain = ctx.createGain(); ctx.createMediaStreamSource(new MediaStream([track])).connect(w.gain); w.gain.connect(master); applyW(w);
+  } else if (w.video) {
+    w.video.srcObject = stream; w.video.play().catch(() => {}); w.who.textContent = "Tela de " + w.name;
+  } else addTile("w-" + id, stream, "Tela de " + w.name, id); // sem janela: mostra na própria página
+}
+function stopWatch(sid, notify) {
+  const w = watching[sid]; if (!w) return;
+  delete watching[sid]; clearInterval(w.iv);
+  if (w.gain) { try { w.gain.disconnect(); } catch {} }
+  if (w.win && !w.win.closed) w.win.close();
+  removeTile("w-" + sid);
+  if (notify && pcs[sid]) sig(sid, { watch: { on: false } });
+  renderVoice();
+}
+window.addEventListener("beforeunload", () => Object.values(watching).forEach((w) => w.win && w.win.close()));
 
 // ---------- WebRTC (malha, "perfect negotiation") ----------
 const tileLabel = (owner, sid) => userName(owner) + (meta[sid] === "screen" ? " — tela" : meta[sid] === "camera" ? " — câmera" : "");
@@ -675,6 +775,7 @@ function getPc(id) {
   };
   pc.ontrack = (e) => {
     const stream = e.streams[0] || new MediaStream([e.track]);
+    if (meta[stream.id] === "screen") return onScreenTrack(id, stream, e.track);
     if (e.track.kind === "audio") {
       const a = new Audio(); a.muted = true; a.srcObject = stream; a.play().catch(() => {}); // necessário no Chrome
       ctx.createMediaStreamSource(new MediaStream([e.track])).connect(gainOf(id));
@@ -682,13 +783,15 @@ function getPc(id) {
     } else addTile(stream.id, stream, tileLabel(id, stream.id), id);
   };
   for (const [s, kind] of mediaList()) {
+    if (kind === "screen") continue;
     s.getTracks().forEach((t) => pc.addTrack(t, s));
     if (kind !== "mic") sig(id, { meta: { id: s.id, kind } });
   }
   return st;
 }
 function closePc(id) {
-  pcs[id] && pcs[id].pc.close(); delete pcs[id];
+  stopWatch(id, false);
+  pcs[id] && pcs[id].pc.close(); delete pcs[id]; updateWatchers();
   gains[id] && gains[id].disconnect(); delete gains[id]; delete analysers[id];
   document.querySelectorAll(`.tile[data-owner="${id}"]`).forEach((t) => t.remove());
 }
@@ -696,7 +799,8 @@ socket.on("signal", async ({ from, data }) => {
   if (!voiceCh) return;
   const st = getPc(from), pc = st.pc;
   try {
-    if (data.meta) {
+    if (data.watch) handleWatch(from, data.watch.on);
+    else if (data.meta) {
       meta[data.meta.id] = data.meta.kind;
       if (data.meta.kind === null) removeTile(data.meta.id);
       else { const t = $("t-" + data.meta.id); if (t) t.querySelector("span").textContent = tileLabel(from, data.meta.id); }
@@ -718,6 +822,7 @@ function syncPeers() {
 socket.on("voice-users", (m) => {
   const prev = myVoice(); voiceMap = m;
   if (voiceCh && prev.some((u) => u.id === socket.id)) diffSounds(prev, myVoice()); // só depois que eu já estava na lista (evita tocar "entrou" para todo mundo ao chegar)
+  Object.keys(watching).forEach((id) => { if (!myVoice().some((u) => u.id === id && u.screen)) stopWatch(id, false); }); // a pessoa parou a transmissão
   syncPeers(); render();
 });
 
@@ -853,7 +958,7 @@ socket.on("disconnect", () => {
 });
 
 // ---------- início ----------
-$("meter").innerHTML = "<i></i>".repeat(40);
+$("meter").innerHTML = "<i></i>".repeat(40) + '<b id="thrmark" hidden></b>';
 $("lname").value = profile.name || ""; paintLobby();
 const pre = new URLSearchParams(location.search).get("sala"); if (pre) $("lcode").value = pre.toUpperCase();
 if (CFG.RELEASES_URL && !/Electron/.test(navigator.userAgent)) {
