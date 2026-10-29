@@ -1,20 +1,28 @@
 const express = require("express");
 const http = require("http");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { Server } = require("socket.io");
 
-const MAX = 10; // máximo de pessoas na call
+const MAX = 10; // pessoas por canal de voz
+const MAXFILE = 20 * 1024 * 1024; // 20 MB por arquivo
+const STATUS = ["online", "away", "dnd", "invisible"];
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" }, maxHttpBufferSize: 30 * 1024 * 1024 });
-app.use(express.static("public"));
+const io = new Server(server, { cors: { origin: process.env.ALLOWED_ORIGIN || "*" } });
 
-// A autenticação fica desligada por padrão para não depender de PostgreSQL.
-// Quando formos testar o cadastro/login, habilitaremos explicitamente com ENABLE_AUTH=true.
-if (process.env.ENABLE_AUTH === "true") {
-  const { registerAuth } = require("./auth");
-  registerAuth(app);
-}
+// CORS para o site (GitHub Pages) falar com este servidor
+app.use((req, res, next) => {
+  res.set({
+    "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
+    "Access-Control-Allow-Headers": "x-sid,x-filename,x-filetype,content-type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  });
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+app.use(express.static("public"));
 app.get("/health", (_, res) => res.send("ok"));
 
 // ---------- utilidades ----------
@@ -23,7 +31,6 @@ const pidOf = (key) => crypto.createHash("sha256").update(String(key)).digest("h
 const clean = (t, n) => String(t || "").replace(/[\u0000-\u001f]/g, "").trim().slice(0, n);
 const okAvatar = (a) =>
   typeof a === "string" && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(a) && a.length < 40000 ? a : null;
-
 const hashPw = (pw, salt) => crypto.scryptSync(String(pw).slice(0, 64), salt, 32);
 const checkPw = (room, pw) => crypto.timingSafeEqual(hashPw(pw, room.salt), room.hash);
 const fails = new Map();
@@ -33,38 +40,81 @@ const addFail = (ip) => {
   fails.set(ip, f && Date.now() - f.t < 600000 ? { n: f.n + 1, t: f.t } : { n: 1, t: Date.now() });
 };
 
+// ---------- arquivos enviados no chat ----------
+const UP = path.join(__dirname, "uploads");
+fs.mkdirSync(UP, { recursive: true });
+for (const f of fs.readdirSync(UP)) fs.unlinkSync(path.join(UP, f)); // começa limpo (o registro é em memória)
+const files = new Map(); // id -> { name, type, size, room, pid, attached, t }
+const IMG = /^image\/(png|jpeg|gif|webp)$/;
+const dropFile = (id) => { files.delete(id); fs.unlink(path.join(UP, id), () => {}); };
+const dropFiles = (list) => (list || []).forEach((m) => m.file && dropFile(m.file.id));
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, f] of files) if (now - f.t > 7 * 864e5 || (!f.attached && now - f.t > 36e5)) dropFile(id);
+}, 36e5).unref();
+
+app.post("/upload", express.raw({ type: () => true, limit: MAXFILE }), (req, res) => {
+  const s = io.sockets.sockets.get(String(req.get("x-sid")));
+  if (!s || !s.data.room) return res.status(403).json({ error: "Entre em uma sala primeiro." });
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "Arquivo vazio." });
+  s.data.up = (s.data.up || []).filter((t) => Date.now() - t < 60000);
+  if (s.data.up.length >= 10) return res.status(429).json({ error: "Muitos envios seguidos. Aguarde um minuto." });
+  s.data.up.push(Date.now());
+  let name = "arquivo";
+  try { name = clean(decodeURIComponent(req.get("x-filename") || ""), 120) || "arquivo"; } catch {}
+  const type = IMG.test(req.get("x-filetype") || "") ? req.get("x-filetype") : "application/octet-stream";
+  const id = crypto.randomBytes(16).toString("hex");
+  fs.writeFile(path.join(UP, id), req.body, (err) => {
+    if (err) return res.status(500).json({ error: "Falha ao salvar o arquivo." });
+    files.set(id, { name, type, size: req.body.length, room: s.data.room, pid: s.data.pid, attached: false, t: Date.now() });
+    res.json({ id });
+  });
+});
+app.get("/files/:id", (req, res) => {
+  const f = files.get(req.params.id);
+  if (!f) return res.sendStatus(404);
+  res.set({
+    "Content-Type": f.type, "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox",
+    "Content-Disposition": (IMG.test(f.type) ? "inline" : "attachment") + "; filename*=UTF-8''" + encodeURIComponent(f.name),
+    "Cross-Origin-Resource-Policy": "cross-origin", "Cache-Control": "private, max-age=3600",
+  });
+  res.sendFile(path.join(UP, req.params.id));
+});
+
 // ---------- salas ----------
-// sala = { name, owner, channels[], roles[], members: Map(pid -> {name, avatar, role}), msgs{canal: []} }
+// sala = { name, owner, channels[{id,type,name}], roles[], members: Map(pid -> {name, avatar, role}), msgs{canal: []} }
 const rooms = new Map();
 const newCode = () => { let c; do c = crypto.randomBytes(3).toString("hex").toUpperCase(); while (rooms.has(c)); return c; };
 const newRoom = (name, owner) => ({
   name, owner, members: new Map(), msgs: { geral: [] },
-  channels: [{ id: "geral", name: "geral" }],
-  voiceChannels: [{ id: "voice-general", name: "Voz geral" }],
+  channels: [{ id: "geral", type: "text", name: "geral" }, { id: "voz", type: "voice", name: "Voz" }],
   roles: [{ id: "admin", name: "Admin", color: "#f23f43" }],
 });
-const info = (r) => ({ channels: r.channels, voiceChannels: r.voiceChannels || [{ id: "voice-general", name: "Voz geral" }], roles: r.roles, owner: r.owner });
+const info = (r) => ({ channels: r.channels, roles: r.roles, owner: r.owner });
 const socketsIn = (code) => [...io.sockets.sockets.values()].filter((s) => s.data.room === code);
 const can = (s, r) => s.data.pid && (s.data.pid === r.owner || (r.members.get(s.data.pid) || {}).role === "admin");
+const firstText = (r) => r.channels.find((c) => c.type === "text");
 
-const voiceOf = (code) =>
-  socketsIn(code).filter((s) => s.data.voice).map((s) => ({
-    id: s.id, pid: s.data.pid, name: s.data.name, channelId: s.data.voiceCh,
-    muted: !!s.data.muted, deafened: !!s.data.deafened, screen: !!s.data.screen, cam: !!s.data.cam,
-  }));
+const voiceOf = (code) => {
+  const out = {};
+  socketsIn(code).forEach((s) => {
+    if (!s.data.voice) return;
+    (out[s.data.voice] ??= []).push({
+      id: s.id, pid: s.data.pid, name: s.data.name,
+      muted: !!s.data.muted, deafened: !!s.data.deafened, screen: !!s.data.screen, cam: !!s.data.cam,
+    });
+  });
+  return out;
+};
 const push = (code) => code && io.to("r:" + code).emit("voice-users", voiceOf(code));
 const membersOf = (code) => {
   const r = rooms.get(code);
   if (!r) return [];
-  const on = new Set(socketsIn(code).map((s) => s.data.pid));
-  return [...r.members].map(([pid, m]) => {
-    const presence = ["online", "away", "dnd", "invisible"].includes(m.presence) ? m.presence : "online";
-    return {
-      pid, name: m.name, avatar: m.avatar || null, role: m.role || null, presence,
-      // Invisible users remain connected but appear offline to other members.
-      online: on.has(pid) && presence !== "invisible",
-    };
-  });
+  const live = new Map(); // pid -> status (quem está invisível aparece offline)
+  socketsIn(code).forEach((s) => { if (s.data.status !== "invisible" && !live.has(s.data.pid)) live.set(s.data.pid, s.data.status); });
+  return [...r.members].map(([pid, m]) => ({
+    pid, name: m.name, avatar: m.avatar || null, role: m.role || null, online: live.has(pid), status: live.get(pid) || "offline",
+  }));
 };
 const pushMembers = (code) => code && io.to("r:" + code).emit("members", membersOf(code));
 const pushInfo = (code) => { const r = rooms.get(code); r && io.to("r:" + code).emit("room", info(r)); };
@@ -73,22 +123,21 @@ function leaveRoom(s) {
   const r = s.data.room;
   if (!r) return;
   s.leave("r:" + r);
-  Object.assign(s.data, { room: null, voice: false, voiceCh: null, muted: false, deafened: false, screen: false, cam: false });
+  Object.assign(s.data, { room: null, voice: false, muted: false, deafened: false, screen: false, cam: false });
   push(r);
   pushMembers(r);
 }
 
 io.on("connection", (s) => {
-  s.data = { name: "Anônimo", avatar: null, pid: null };
+  s.data = { name: "Anônimo", avatar: null, pid: null, status: "online" };
 
-  s.on("profile", ({ name, avatar, key, presence }) => {
+  s.on("profile", ({ name, avatar, key, status }) => {
     if (typeof key === "string" && key.length >= 16 && key.length <= 80) s.data.pid = pidOf(key);
     s.data.name = clean(name, 20) || "Anônimo";
     s.data.avatar = okAvatar(avatar);
-    if (["online", "away", "dnd", "invisible"].includes(presence)) s.data.presence = presence;
-    if (!["online", "away", "dnd", "invisible"].includes(s.data.presence)) s.data.presence = "online";
+    s.data.status = STATUS.includes(status) ? status : "online";
     const r = rooms.get(s.data.room), m = r && r.members.get(s.data.pid);
-    if (m) { m.name = s.data.name; m.avatar = s.data.avatar; m.presence = s.data.presence; }
+    if (m) { m.name = s.data.name; m.avatar = s.data.avatar; }
     push(s.data.room);
     pushMembers(s.data.room);
   });
@@ -117,103 +166,66 @@ io.on("connection", (s) => {
     if (!room.owner) room.owner = s.data.pid; // quem entra primeiro numa sala sem dono vira o criador
     const m = room.members.get(s.data.pid) || { role: null };
     m.name = s.data.name; m.avatar = s.data.avatar;
-    m.presence = ["online", "away", "dnd", "invisible"].includes(s.data.presence) ? s.data.presence : "online";
     room.members.set(s.data.pid, m);
     s.data.room = code;
     s.join("r:" + code);
-    ack({ ok: true, code, name: room.name, locked: !!room.hash, pid: s.data.pid, info: info(room), members: membersOf(code), ch: "geral" });
+    ack({ ok: true, code, name: room.name, locked: !!room.hash, pid: s.data.pid, info: info(room), members: membersOf(code), ch: firstText(room).id });
     push(code);
     pushMembers(code);
     pushInfo(code);
   });
   s.on("leave-room", () => leaveRoom(s));
 
-  // ----- canais de texto -----
-  s.on("history", ({ ch }, ack) => { const r = rooms.get(s.data.room); ack((r && r.msgs[ch]) || []); });
-  s.on("msg", ({ ch, text }) => {
+  // ----- mensagens -----
+  const textCh = (r, ch) => r && r.channels.some((c) => c.id === ch && c.type === "text");
+  s.on("history", ({ ch }, ack) => { const r = rooms.get(s.data.room); ack(textCh(r, ch) ? r.msgs[ch] || [] : []); });
+  s.on("msg", ({ ch, text, fileId }) => {
     const r = rooms.get(s.data.room);
     text = String(text || "").slice(0, 2000);
-    if (!r || !text.trim() || !r.channels.some((c) => c.id === ch)) return;
-    const m = { pid: s.data.pid, name: s.data.name, text, time: Date.now(), ch };
+    const ref = fileId && files.get(fileId);
+    const ok = ref && ref.pid === s.data.pid && ref.room === s.data.room && !ref.attached;
+    if (!textCh(r, ch) || (!text.trim() && !ok)) return;
+    const m = { id: crypto.randomBytes(6).toString("hex"), pid: s.data.pid, name: s.data.name, text, time: Date.now(), ch };
+    if (ok) { ref.attached = true; m.file = { id: fileId, name: ref.name, size: ref.size, image: IMG.test(ref.type) }; }
     const list = (r.msgs[ch] ??= []);
     list.push(m);
     if (list.length > 50) list.shift();
     io.to("r:" + s.data.room).emit("msg", m);
   });
-  s.on("create-channel", ({ name, description }, ack) => {
-    const r = rooms.get(s.data.room);
-    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
-    name = clean(name, 30);
-    description = clean(description, 120);
-    if (!name) return ack({ error: "Nome inválido." });
-    if (r.channels.length >= 30) return ack({ error: "Limite de canais atingido." });
-    const id = rid();
-    r.channels.push({ id, name, description });
-    r.msgs[id] = [];
-    pushInfo(s.data.room);
-    ack({ id });
-  });
-  s.on("edit-channel", ({ id, name, description }, ack = () => {}) => {
-    const r = rooms.get(s.data.room);
-    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
-    const channel = r.channels.find((c) => c.id === id);
-    if (!channel) return ack({ error: "Canal não encontrado." });
-    name = clean(name, 30);
-    description = clean(description, 120);
-    if (!name) return ack({ error: "Nome inválido." });
-    channel.name = name;
-    channel.description = description;
-    pushInfo(s.data.room);
-    ack({ ok: true });
-  });
-  s.on("delete-channel", ({ id }) => {
-    const r = rooms.get(s.data.room);
-    if (!r || !can(s, r) || r.channels.length <= 1) return;
-    r.channels = r.channels.filter((c) => c.id !== id);
-    delete r.msgs[id];
-    pushInfo(s.data.room);
-  });
-  s.on("create-voice-channel", ({ name }, ack = () => {}) => {
-    const r = rooms.get(s.data.room);
-    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
-    name = clean(name, 30);
-    if (!name) return ack({ error: "Nome inválido." });
-    if (!r.voiceChannels) r.voiceChannels = [{ id: "voice-general", name: "Voz geral" }];
-    if (r.voiceChannels.length >= 20) return ack({ error: "Limite de canais de voz atingido." });
-    const id = rid(); r.voiceChannels.push({ id, name });
-    pushInfo(s.data.room); ack({ id });
-  });
-  s.on("edit-voice-channel", ({ id, name }, ack = () => {}) => {
-    const r = rooms.get(s.data.room);
-    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
-    const channel = (r.voiceChannels || []).find((c) => c.id === id);
-    if (!channel) return ack({ error: "Canal de voz não encontrado." });
-    name = clean(name, 30);
-    if (!name) return ack({ error: "Nome inválido." });
-    channel.name = name; pushInfo(s.data.room); ack({ ok: true });
-  });
-  s.on("delete-voice-channel", ({ id }, ack = () => {}) => {
-    const r = rooms.get(s.data.room);
-    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
-    if (!r.voiceChannels || r.voiceChannels.length <= 1) return ack({ error: "Mantenha pelo menos um canal de voz." });
-    if (socketsIn(s.data.room).some((socket) => socket.data.voice && socket.data.voiceCh === id))
-      return ack({ error: "Alguém está conectado a esse canal. Peça para todos saírem antes de excluí-lo." });
-    r.voiceChannels = r.voiceChannels.filter((c) => c.id !== id);
-    pushInfo(s.data.room); ack({ ok: true });
+  s.on("delete-msg", ({ ch, id }) => {
+    const r = rooms.get(s.data.room), list = r && r.msgs[ch];
+    const i = list ? list.findIndex((m) => m.id === id) : -1;
+    if (i < 0) return;
+    const m = list[i];
+    if (m.pid !== s.data.pid && !can(s, r)) return; // autor ou admin/criador
+    list.splice(i, 1);
+    dropFiles([m]);
+    io.to("r:" + s.data.room).emit("msg-deleted", { ch, id });
   });
 
-  s.on("attachment", ({ ch, name, type, data }) => {
+  // ----- canais (texto e voz) -----
+  s.on("create-channel", ({ name, type }, ack) => {
     const r = rooms.get(s.data.room);
-    if (!r || !r.channels.some((c) => c.id === ch) || typeof data !== "string") return;
-    const match = data.match(/^data:([\w.+/-]+);base64,([A-Za-z0-9+/=]+)$/);
-    if (!match) return s.emit("attachment-error", { error: "Arquivo inválido." });
-    const bytes = Buffer.byteLength(match[2], "base64");
-    if (bytes > 20 * 1024 * 1024) return s.emit("attachment-error", { error: "O limite é 20 MB por arquivo." });
-    name = clean(name, 180) || "arquivo";
-    type = clean(type || match[1], 120);
-    const m = { pid: s.data.pid, name: s.data.name, text: "", time: Date.now(), ch, attachment: { name, type, data, size: bytes } };
-    const list = (r.msgs[ch] ??= []); list.push(m); if (list.length > 50) list.shift();
-    io.to("r:" + s.data.room).emit("msg", m);
+    if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
+    name = clean(name, 30);
+    if (!name) return ack({ error: "Nome inválido." });
+    if (r.channels.length >= 30) return ack({ error: "Limite de canais atingido." });
+    type = type === "voice" ? "voice" : "text";
+    const id = rid();
+    r.channels.push({ id, type, name });
+    if (type === "text") r.msgs[id] = [];
+    pushInfo(s.data.room); // antes do ack, para o cliente já conhecer o canal
+    ack({ id });
+  });
+  s.on("delete-channel", ({ id }) => {
+    const r = rooms.get(s.data.room), c = r && r.channels.find((x) => x.id === id);
+    if (!c || !can(s, r)) return;
+    if (c.type === "text" && r.channels.filter((x) => x.type === "text").length <= 1) return; // sempre sobra um canal de texto
+    r.channels = r.channels.filter((x) => x.id !== id);
+    dropFiles(r.msgs[id]); delete r.msgs[id];
+    socketsIn(s.data.room).forEach((x) => { if (x.data.voice === id) x.data.voice = false; });
+    pushInfo(s.data.room);
+    push(s.data.room);
   });
 
   // ----- cargos -----
@@ -243,24 +255,24 @@ io.on("connection", (s) => {
   });
 
   // ----- voz -----
-  s.on("voice-join", ({ channelId }, ack) => {
+  s.on("voice-join", ({ channel }, ack) => {
     const r = rooms.get(s.data.room);
     if (!r) return ack({ error: "Entre em uma sala primeiro." });
-    const channels = r.voiceChannels || [{ id: "voice-general", name: "Voz geral" }];
-    if (!channels.some((c) => c.id === channelId)) return ack({ error: "Canal de voz não encontrado." });
-    if ((!s.data.voice || s.data.voiceCh !== channelId) && voiceOf(s.data.room).filter((u) => u.channelId === channelId).length >= MAX)
-      return ack({ error: `Call cheia: máximo de ${MAX} pessoas.` });
-    Object.assign(s.data, { voice: true, voiceCh: channelId, muted: false, deafened: false, screen: false, cam: false });
-    ack({ ok: true }); push(s.data.room);
+    if (!r.channels.some((c) => c.id === channel && c.type === "voice")) return ack({ error: "Canal de voz não encontrado." });
+    if (s.data.voice !== channel && (voiceOf(s.data.room)[channel] || []).length >= MAX)
+      return ack({ error: `Canal cheio: máximo de ${MAX} pessoas.` });
+    Object.assign(s.data, { voice: channel, muted: false, deafened: false, screen: false, cam: false });
+    ack({ ok: true });
+    push(s.data.room);
   });
-  s.on("voice-leave", () => { s.data.voice = false; s.data.voiceCh = null; push(s.data.room); });
+  s.on("voice-leave", () => { s.data.voice = false; push(s.data.room); });
   s.on("voice-state", (st) => {
     Object.assign(s.data, { muted: !!st.muted, deafened: !!st.deafened, screen: !!st.screen, cam: !!st.cam });
     push(s.data.room);
   });
   s.on("signal", ({ to, data }) => {
     const t = io.sockets.sockets.get(to);
-    if (t && t.data.voice && t.data.room === s.data.room && t.data.voiceCh === s.data.voiceCh) t.emit("signal", { from: s.id, data });
+    if (t && t.data.voice && t.data.voice === s.data.voice && t.data.room === s.data.room) t.emit("signal", { from: s.id, data });
   });
 
   s.on("disconnect", () => { push(s.data.room); pushMembers(s.data.room); });
