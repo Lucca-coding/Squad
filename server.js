@@ -223,6 +223,12 @@ io.on("connection", (s) => {
     pushInfo(s.data.room); // antes do ack, para o cliente já conhecer o canal
     ack({ id });
   });
+  s.on("rename-channel", ({ id, name }) => {
+    const r=rooms.get(s.data.room), c=r&&r.channels.find((x)=>x.id===id);
+    if(!r||!c||!can(s,r))return;
+    name=clean(name,30);if(!name)return;
+    c.name=name;pushInfo(s.data.room);
+  });
   s.on("delete-channel", ({ id }) => {
     const r = rooms.get(s.data.room), c = r && r.channels.find((x) => x.id === id);
     if (!c || !can(s, r)) return;
