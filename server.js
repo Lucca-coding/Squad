@@ -192,6 +192,12 @@ io.on("connection", (s) => {
     if (list.length > 50) list.shift();
     io.to("r:" + s.data.room).emit("msg", m);
   });
+  s.on("edit-msg", ({ ch, id, text }) => {
+    const r=rooms.get(s.data.room), list=r&&r.msgs[ch], m=list&&list.find((x)=>x.id===id);
+    text=String(text||"").trim().slice(0,2000);
+    if(!m||!text||m.pid!==s.data.pid||!textCh(r,ch))return;
+    m.text=text;m.edited=Date.now();io.to("r:"+s.data.room).emit("msg-edited",m);
+  });
   s.on("delete-msg", ({ ch, id }) => {
     const r = rooms.get(s.data.room), list = r && r.msgs[ch];
     const i = list ? list.findIndex((m) => m.id === id) : -1;
@@ -204,7 +210,7 @@ io.on("connection", (s) => {
   });
 
   // ----- canais (texto e voz) -----
-  s.on("create-channel", ({ name, type }, ack) => {
+  s.on("create-channel", ({ name, type, maxUsers }, ack) => {
     const r = rooms.get(s.data.room);
     if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
     name = clean(name, 30);
@@ -212,7 +218,7 @@ io.on("connection", (s) => {
     if (r.channels.length >= 30) return ack({ error: "Limite de canais atingido." });
     type = type === "voice" ? "voice" : "text";
     const id = rid();
-    r.channels.push({ id, type, name });
+    r.channels.push({ id, type, name, ...(type === "voice" ? { maxUsers: Math.max(2, Math.min(10, Number.isInteger(Number(maxUsers)) ? Number(maxUsers) : 10)) } : {}) });
     if (type === "text") r.msgs[id] = [];
     pushInfo(s.data.room); // antes do ack, para o cliente já conhecer o canal
     ack({ id });
@@ -259,8 +265,9 @@ io.on("connection", (s) => {
     const r = rooms.get(s.data.room);
     if (!r) return ack({ error: "Entre em uma sala primeiro." });
     if (!r.channels.some((c) => c.id === channel && c.type === "voice")) return ack({ error: "Canal de voz não encontrado." });
-    if (s.data.voice !== channel && (voiceOf(s.data.room)[channel] || []).length >= MAX)
-      return ack({ error: `Canal cheio: máximo de ${MAX} pessoas.` });
+    const voiceChannel=r.channels.find((c)=>c.id===channel&&c.type==="voice"), limit=voiceChannel.maxUsers||MAX;
+    if (s.data.voice !== channel && (voiceOf(s.data.room)[channel] || []).length >= limit)
+      return ack({ error: `Canal cheio: máximo de ${limit} pessoas.` });
     Object.assign(s.data, { voice: channel, muted: false, deafened: false, screen: false, cam: false });
     ack({ ok: true });
     push(s.data.room);
