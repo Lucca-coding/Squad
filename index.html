@@ -134,7 +134,7 @@ if((m===10&&n>=5)||(m===11&&n<=5))season="halloween";
 if((m===11&&n>=25)||m===12||(m===1&&n<=5))season="natal";
 if(season!=="normal")document.documentElement.dataset.season=season;
 const logo=season==="halloween"?"halloween.png":season==="natal"?"natal.png":"logo.png";
-document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("#lobby .hero img").forEach(i=>i.src=logo);});
+document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll("#lobby .hero img, #brand img").forEach(i=>i.src=logo);});
 })();
 </script>
 <div id="lobby"><div class="card">
