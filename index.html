@@ -57,21 +57,12 @@ button{font:inherit;cursor:pointer;border:0;color:var(--txt)}input,select{font:i
 #input{width:100%;padding:12px;border:0;border-radius:8px;background:var(--inp);color:var(--txt);outline:none}
 #input:focus,.card input:focus{outline:1px solid var(--neon);box-shadow:0 0 10px #00e5ff55}
 /* membros */
-#members{width:250px;background:var(--p1);border-left:1px solid var(--hov);overflow-y:auto;padding:8px;flex:none}
-.member-tools{position:sticky;top:-8px;z-index:2;background:var(--p1);padding:4px 0 8px}
-#membersearch{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--p2);color:var(--txt);outline:none}
-#membersearch:focus{border-color:var(--pur);box-shadow:0 0 0 2px #7c3aed33}
+#members{width:240px;background:var(--p1);border-left:1px solid var(--hov);overflow-y:auto;padding:4px 8px 16px;flex:none}
 .mg{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;margin:14px 8px 4px}
 .mem{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:6px;cursor:pointer}.mem:hover{background:var(--hov)}
 .mem.off{opacity:.45}.aw{position:relative;flex:none}
 .dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;background:#4b4866;border:2px solid var(--p1)}
-.dot.on{background:#22c55e;box-shadow:0 0 6px #22c55e88}
-.dot.away{background:#fbbf24;box-shadow:0 0 6px #fbbf2488}
-.dot.dnd{background:#f23f43;box-shadow:0 0 6px #f23f4388}
-.dot.invisible{background:#77738b}
-.presence-tag{font-size:10px;color:var(--mut2);border:1px solid var(--line);border-radius:5px;padding:2px 5px;margin-left:auto;white-space:nowrap}
-.mem.off .nm{color:var(--mut)}
-#presence{width:100%;padding:8px;background:var(--p2);color:var(--txt);border:1px solid var(--line);border-radius:6px}
+.dot.on{background:var(--neon);box-shadow:0 0 6px var(--neon)}
 body.nomem #members{display:none}
 @media(max-width:1000px){#members{display:none}body.showmem #members{display:block;position:fixed;right:0;top:0;bottom:0;z-index:15}}
 @media(max-width:700px){#side{width:190px}}
@@ -101,6 +92,15 @@ body.nomem #members{display:none}
 .line .btn{flex:1}#lerr{color:var(--red);min-height:1.2em}#lstatus{color:var(--mut)}
 .hero{text-align:center;margin-bottom:6px}.hero img{width:80%;max-width:270px;display:block;margin:0 auto;filter:drop-shadow(0 0 22px #7c3aed66)}
 .slogan{font-size:12px;color:var(--mut);letter-spacing:.05em;margin-top:4px}
+.dot.online{background:var(--neon);box-shadow:0 0 6px var(--neon)}.dot.away{background:#fbbf24}.dot.dnd{background:#f23f43}.dot.inv{background:#4b4866}
+#me .dot{border-color:#0c0c14}
+.strow{display:flex;align-items:center;gap:10px;width:100%;background:none;text-align:left;padding:7px 8px;border-radius:6px}
+.strow:hover,.strow.sel{background:var(--hov)}.strow small{display:block;color:var(--mut);font-size:12px}.sdot{width:12px;height:12px;border-radius:50%;flex:none}
+.m{position:relative}.m .del{position:absolute;right:4px;top:0;display:none;background:var(--inp);border-radius:6px;padding:3px 7px}.m:hover .del{display:block}
+.att{max-width:320px;max-height:320px;border-radius:8px;display:block;margin-top:6px}
+.file{display:inline-block;margin-top:6px;padding:8px 12px;background:var(--inp);border-radius:8px;color:var(--neon);text-decoration:none}
+#form{display:flex;gap:8px;align-items:center}#form .ic{width:40px;height:40px}
+#upstat{padding:0 16px;font-size:12px;color:var(--mut)}#upstat:empty{display:none}
 </style>
 </head>
 <body>
@@ -128,7 +128,7 @@ body.nomem #members{display:none}
   </div>
   <div id="lists">
     <div class="sec"><span>Canais de texto</span><button class="plus" id="badd" title="Criar canal" hidden>+</button></div><div id="tch"></div>
-    <div class="sec"><span>Canais de voz</span><button class="plus" id="bvadd" title="Criar canal de voz" hidden>+</button></div><div id="vch"></div>
+    <div class="sec"><span>Canais de voz</span><button class="plus" id="baddv" title="Criar canal de voz" hidden>+</button></div><div id="vch"></div>
   </div>
   <div id="panel">
     <div id="voicebar" hidden>
@@ -137,8 +137,8 @@ body.nomem #members{display:none}
       <div class="row"><button class="ic" id="bcam" title="Câmera">📷</button><button class="ic" id="bscr" title="Compartilhar tela">🖥️</button></div>
     </div>
     <div id="me">
-      <div class="av" id="meav"></div>
-      <div class="mn"><b id="mename"></b><small>online</small></div>
+      <div class="aw"><div class="av" id="meav"></div><span class="dot" id="medot"></span></div>
+      <div class="mn"><b id="mename"></b><small id="mestatus">Disponível</small></div>
       <button class="ic" id="bmic" title="Mutar microfone">🎤</button>
       <button class="ic" id="bdeaf" title="Ensurdecer (parar de ouvir todos)">🎧</button>
       <button class="ic" id="bset" title="Configurações de voz">⚙️</button>
@@ -150,9 +150,11 @@ body.nomem #members{display:none}
   <div id="bar"><span id="title"></span><button class="ic" id="btnmem" title="Membros">👥</button></div>
   <div id="grid"></div>
   <div id="msgs"></div>
-  <div id="form"><div class="line"><button class="ic" id="bfile" title="Anexar imagem ou arquivo">📎</button><input type="file" id="attachfile" multiple hidden><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div><small style="display:block;color:var(--mut);margin-top:5px">Imagens e arquivos até 20 MB por arquivo.</small></div>
+  <div id="upstat"></div>
+  <div id="form"><button class="ic" id="battach" title="Enviar imagem ou arquivo (até 20 MB)">📎</button><input id="input" placeholder="Enviar mensagem" autocomplete="off"></div>
+  <input type="file" id="ufile" multiple hidden>
 </div>
-<div id="members"><div class="member-tools"><input id="membersearch" type="search" placeholder="Buscar membro…" aria-label="Buscar membro"></div><div id="memberlist"></div></div>
+<div id="members"></div>
 
 <input type="file" id="pfile" accept="image/*" hidden>
 <div class="pop" id="menu" hidden></div>
@@ -166,16 +168,9 @@ body.nomem #members{display:none}
       <button class="wide" id="premove" style="margin:0">Remover foto</button>
     </div>
   </div>
-  <label>Nome público</label>
+  <label>Status</label><div id="stlist"></div>
+  <label>Nome</label>
   <input id="pname" maxlength="20" style="width:100%;background:var(--p2);color:var(--txt);border:0;padding:8px;border-radius:4px">
-  <label>Estado de presença</label>
-  <select id="presence">
-    <option value="online">🟢 Online</option>
-    <option value="away">🟡 Ausente</option>
-    <option value="dnd">🔴 Não perturbar</option>
-    <option value="invisible">⚫ Invisível</option>
-  </select>
-  <small style="display:block;color:var(--mut);margin-top:6px">No modo invisível, você aparece offline para os outros membros.</small>
   <button class="wide" id="psave">Salvar</button>
 </div>
 <div class="pop" id="sharepop" hidden style="width:300px">
@@ -199,10 +194,13 @@ body.nomem #members{display:none}
     <div><label>Volume do alto-falante</label><input type="range" id="vspk" min="0" max="100"></div>
   </div>
   <div class="line" style="align-items:center;margin-top:20px"><button class="btn1" id="btest">Teste do microfone</button><div id="meter"></div></div>
-  <label style="text-transform:none"><input type="checkbox" id="sounds"> Sons da sala</label>
   <label style="text-transform:none"><input type="checkbox" id="echo"> Cancelamento de eco</label>
   <label style="text-transform:none"><input type="checkbox" id="noise"> Supressão de ruído</label>
   <small style="color:var(--mut)">Use fones no teste para evitar eco.</small>
+  <label>Sons</label>
+  <label style="text-transform:none;margin:4px 0"><input type="checkbox" id="sndJoin"> Som quando alguém entra ou sai da call</label>
+  <label style="text-transform:none;margin:4px 0"><input type="checkbox" id="sndMute"> Som quando você muta ou desmuta</label>
+  <label style="text-transform:none;margin:4px 0"><input type="checkbox" id="sndOthers"> Som quando outras pessoas mutam ou desmutam</label>
 </div></div>
 <div class="modal" id="rolemodal" hidden><div class="mbox" style="width:min(460px,94vw)">
   <div class="mh"><h3>Cargos</h3><button class="ic" data-close>✕</button></div>
@@ -212,11 +210,11 @@ body.nomem #members{display:none}
   <small style="color:var(--mut);display:block;margin-top:10px">Para dar um cargo, clique no nome da pessoa na lista de membros.</small>
 </div></div>
 
-<script src="config.js?v=20261028-2"></script>
+<script src="config.js"></script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const CFG = window.MINICORD || {};
-const socket = io(CFG.SERVER_URL || "https://squad-server-xbns.onrender.com");
+const socket = io(CFG.SERVER_URL || undefined);
 const $ = (id) => document.getElementById(id);
 const rtc = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, ...(CFG.TURN || [])] };
 const MAX = 10;
@@ -226,19 +224,16 @@ const LS = {
 };
 
 // ---------- estado ----------
-let profile = Object.assign({ name: "", avatar: null, presence: "online" }, LS.get("profile", {}));
-if (!["online", "away", "dnd", "invisible"].includes(profile.presence)) profile.presence = "online";
-let memberFilter = "";
+let profile = Object.assign({ name: "", avatar: null, status: "online" }, LS.get("profile", {}));
 let key = LS.get("squadKey", null); // identidade anônima deste navegador (nunca é mostrada a ninguém)
 if (!key) { key = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()) + "-squad"; LS.set("squadKey", key); }
-const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true, sounds: true }, LS.get("audio", {}));
-let room = null, myPid = null, info = { channels: [], voiceChannels: [], roles: [], owner: null }, members = {}, curCh = null, unread = {};
-let voiceCh = null, voiceUsers = [], roomPass = "", locked = false;
+const set = Object.assign({ mic: null, spk: null, micVol: 1, spkVol: 1, echo: true, noise: true, sndJoin: true, sndMute: true, sndOthers: true }, LS.get("audio", {}));
+let room = null, myPid = null, info = { channels: [], roles: [], owner: null }, members = {}, curCh = null, unread = {};
+let voiceCh = null, voiceMap = {}, roomPass = "", locked = false; // voiceMap: canal de voz -> pessoas nele
 let micRaw = null, micSrc = null, micGain = null, micAn = null, micStream = null, muted = false, deaf = false, testing = false;
 const vids = { camera: null, screen: null };
 const pcs = {}, gains = {}, prefs = {}, analysers = {}, speaking = {}, meta = {};
-let ctx, master;
-function playUiSound(kind = "click") { if (!set.sounds || !ctx) return; try { const o = ctx.createOscillator(), g = ctx.createGain(), now = ctx.currentTime; o.type = "sine"; o.frequency.value = kind === "join" ? 880 : kind === "leave" ? 440 : kind === "mute" ? 330 : 660; g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.07, now + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12); o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 0.13); } catch {} }
+let ctx, master, sfxBus;
 
 // ---------- utilidades ----------
 const color = (n) => { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${235 + (h % 85)},55%,45%)`; };
@@ -260,85 +255,53 @@ const roleColor = (pid) => {
   if (pid === info.owner) return "#fbbf24";
   return (info.roles.find((r) => r.id === m.role) || {}).color || "";
 };
-const userName = (id) => (voiceUsers.find((u) => u.id === id) || {}).name || "Alguém";
+const myVoice = () => voiceMap[voiceCh] || [];
+const userName = (id) => (myVoice().find((u) => u.id === id) || {}).name || "Alguém";
 
 // ---------- renderização ----------
 function render() {
-  if (!room) {
-    $("tch").innerHTML = $("vch").innerHTML = "";
-    $("bvadd").hidden = true;
-    $("memberlist").innerHTML = "";
-    $("members").hidden = true;
-    return;
-  }
-  $("members").hidden = false;
+  if (!room) { $("tch").innerHTML = $("vch").innerHTML = $("members").innerHTML = ""; return; }
   renderChannels(); renderVoice(); renderMembers();
+}
+function delX(c) {
+  const x = el("span", "x", "✕"); x.title = "Apagar canal";
+  x.onclick = (e) => { e.stopPropagation(); if (confirm(`Apagar o canal ${c.name}?`)) socket.emit("delete-channel", { id: c.id }); };
+  return x;
 }
 function renderChannels() {
   $("tch").innerHTML = "";
-  info.channels.forEach((c) => {
+  const texts = info.channels.filter((c) => c.type === "text");
+  texts.forEach((c) => {
     const d = el("div", "ch" + (c.id === curCh ? " on" : "") + (unread[c.id] ? " unread" : ""));
-    const label = el("span", "nm", "# " + c.name);
-    if (c.description) label.title = c.description;
-    d.append(label);
-    if (canManage()) {
-      const edit = el("span", "x", "✎"); edit.title = "Editar canal";
-      edit.onclick = (e) => {
-        e.stopPropagation();
-        const name = prompt("Nome do canal:", c.name);
-        if (name === null) return;
-        const description = prompt("Descrição do canal (opcional, até 120 caracteres):", c.description || "");
-        if (description === null) return;
-        socket.emit("edit-channel", { id: c.id, name, description }, (r) => { if (r && r.error) alert(r.error); });
-      };
-      d.append(edit);
-      if (info.channels.length > 1) {
-        const x = el("span", "x", "✕"); x.title = "Apagar canal";
-        x.onclick = (e) => { e.stopPropagation(); if (confirm(`Apagar o canal #${c.name}?`)) socket.emit("delete-channel", { id: c.id }); };
-        d.append(x);
-      }
-    }
+    d.append(el("span", "nm", "# " + c.name));
+    if (canManage() && texts.length > 1) d.append(delX(c));
     d.onclick = () => openChannel(c.id); $("tch").appendChild(d);
   });
-  $("badd").hidden = !canManage(); $("broles").hidden = !canManage();
+  $("badd").hidden = $("baddv").hidden = $("broles").hidden = !canManage();
 }
 function renderVoice() {
   $("vch").innerHTML = "";
-  const channels = info.voiceChannels || [{ id: "voice-general", name: "Voz geral" }];
-  channels.forEach((channel) => {
-    const users = voiceUsers.filter((u) => u.channelId === channel.id);
-    const d = el("div", "ch" + (voiceCh === channel.id ? " on" : ""));
-    d.append(el("span", "nm", "🔊 " + channel.name), el("span", "sub", `${users.length}/${MAX}`));
-    if (canManage()) {
-      const edit = el("span", "x", "✎"); edit.title = "Editar canal de voz";
-      edit.onclick = (e) => { e.stopPropagation(); const name = prompt("Nome do canal de voz:", channel.name); if (name && name.trim()) socket.emit("edit-voice-channel", { id: channel.id, name }, (r) => r && r.error && alert(r.error)); };
-      d.append(edit);
-      if (channels.length > 1) {
-        const del = el("span", "x", "✕"); del.title = "Excluir canal de voz";
-        del.onclick = (e) => { e.stopPropagation(); if (confirm(`Excluir o canal de voz "${channel.name}"?`)) socket.emit("delete-voice-channel", { id: channel.id }, (r) => r && r.error && alert(r.error)); };
-        d.append(del);
-      }
-    }
-    d.onclick = () => joinVoice(channel.id); $("vch").appendChild(d);
+  info.channels.filter((c) => c.type === "voice").forEach((c) => {
+    const users = voiceMap[c.id] || [];
+    const h = el("div", "ch" + (voiceCh === c.id ? " on" : "")); h.append(el("span", "nm", `🔊 ${c.name} (${users.length}/${MAX})`));
+    if (canManage()) h.append(delX(c));
+    h.onclick = () => joinVoice(c.id); $("vch").appendChild(h);
     users.forEach((u) => {
-      const row = el("div", "vu"), nm = el("span", "nm", u.name + (u.id === socket.id ? " (você)" : ""));
-      const c = roleColor(u.pid); if (c) nm.style.color = c;
-      row.append(avatar(u.pid, u.name, u.id), nm);
-      if (u.screen) row.append(el("span", "badge", "AO VIVO"));
-      if (u.cam) row.append(el("span", "st", "📷"));
-      if (u.muted) row.append(Object.assign(el("span", "st", "🔇"), { title: "Microfone mutado" }));
-      if (u.deafened) row.append(Object.assign(el("span", "st", "🎧🚫"), { title: "Sem áudio" }));
-      if (u.id !== socket.id) row.onclick = (e) => userMenu(u.id, u.name, e);
-      $("vch").appendChild(row);
+      const r = el("div", "vu");
+      const nm = el("span", "nm", u.name + (u.id === socket.id ? " (você)" : "")); const col = roleColor(u.pid); if (col) nm.style.color = col;
+      r.append(avatar(u.pid, u.name, u.id), nm);
+      if (u.screen) r.append(el("span", "badge", "AO VIVO"));
+      if (u.cam) r.append(el("span", "st", "📷"));
+      if (u.muted) r.append(Object.assign(el("span", "st", "🔇"), { title: "Microfone mutado" }));
+      if (u.deafened) r.append(Object.assign(el("span", "st", "🎧🚫"), { title: "Sem áudio" }));
+      if (u.id !== socket.id) r.onclick = (e) => userMenu(u.id, u.name, e);
+      $("vch").appendChild(r);
     });
   });
-  $("bvadd").hidden = !canManage();
 }
 function renderMembers() {
-  const box = $("memberlist"); box.innerHTML = "";
-  const query = memberFilter.trim().toLocaleLowerCase("pt-BR");
-  const all = Object.values(members).filter((m) => !query || m.name.toLocaleLowerCase("pt-BR").includes(query));
-  const on = all.filter((m) => m.online), off = all.filter((m) => !m.online), o = info.owner;
+  const box = $("members"); box.innerHTML = "";
+  const all = Object.values(members), on = all.filter((m) => m.online), off = all.filter((m) => !m.online), o = info.owner;
   const groups = [];
   const g1 = on.filter((m) => m.pid === o); if (g1.length) groups.push(["Criador", g1]);
   info.roles.forEach((r) => { const g = on.filter((m) => m.role === r.id && m.pid !== o); if (g.length) groups.push([r.name, g]); });
@@ -349,17 +312,15 @@ function renderMembers() {
     list.forEach((m) => {
       const r = el("div", "mem" + (m.online ? "" : " off"));
       const aw = el("div", "aw"), a = avatar(m.pid, m.name); a.classList.add("mid");
-      const state = ["online", "away", "dnd", "invisible"].includes(m.presence) ? m.presence : (m.online ? "online" : "invisible");
-      aw.append(a, el("span", "dot " + (m.online ? (state === "away" || state === "dnd" ? state : "on") : "invisible")));
+      aw.append(a, el("span", "dot" + (m.online ? " " + m.status : "")));
       const nm = el("span", "nm", m.name + (m.pid === o ? " 👑" : "")); const c = roleColor(m.pid); if (c) nm.style.color = c;
-      r.append(aw, nm);
-      if (m.online && state !== "online") r.append(el("span", "presence-tag", state === "away" ? "Ausente" : "Não perturbar"));
-      r.onclick = (e) => memberCard(m.pid, e); box.append(r);
+      r.append(aw, nm); r.onclick = (e) => memberCard(m.pid, e); box.append(r);
     });
   });
 }
 function ui() {
-  $("voicebar").hidden = !voiceCh; $("vname").textContent = voiceCh ? $("rname").textContent + " / " + voiceCh : "";
+  const vc = info.channels.find((c) => c.id === voiceCh);
+  $("voicebar").hidden = !voiceCh; $("vname").textContent = vc ? $("rname").textContent + " / " + vc.name : "";
   $("bmic").classList.toggle("off", muted || deaf); $("bdeaf").classList.toggle("off", deaf);
   $("bcam").classList.toggle("on", !!vids.camera); $("bscr").classList.toggle("on", !!vids.screen);
   render();
@@ -374,7 +335,7 @@ function memberCard(pid, e) {
   const top = el("div", "line"); top.style.alignItems = "center";
   const a = avatar(pid, m.name); a.classList.add("huge");
   const t = el("div"); const b = el("b", "", m.name); b.style.color = roleColor(pid);
-  const s = el("small", "", pid === info.owner ? "👑 Criador" : (roleName(m.role) || "Sem cargo") + (m.online ? " · online" : " · offline"));
+  const s = el("small", "", pid === info.owner ? "👑 Criador" : (roleName(m.role) || "Sem cargo") + " · " + (m.online ? statusLabel(m.status).toLowerCase() : "offline"));
   s.style.cssText = "display:block;color:var(--mut)"; t.append(b, s); top.append(a, t); c.append(top);
   if (canManage() && pid !== info.owner) {
     const isOwner = myPid === info.owner;
@@ -390,6 +351,8 @@ function memberCard(pid, e) {
 }
 
 // ---------- canais de texto ----------
+const API = CFG.SERVER_URL || "";
+const fmtSize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
 function openChannel(id) {
   curCh = id; delete unread[id];
   const c = info.channels.find((x) => x.id === id); $("title").textContent = "# " + (c ? c.name : "");
@@ -399,38 +362,71 @@ function openChannel(id) {
 }
 const addMsg = (m) => {
   const mem = members[m.pid] || {};
-  const d = el("div", "m"), a = avatar(m.pid, mem.name || m.name); a.classList.add("big");
+  const d = el("div", "m"); d.dataset.mid = m.id;
+  const a = avatar(m.pid, mem.name || m.name); a.classList.add("big");
   const box = el("div"); box.innerHTML = "<b></b><small></small><div></div>";
   const b = box.querySelector("b"); b.textContent = mem.name || m.name; const c = roleColor(m.pid); if (c) b.style.color = c;
-  box.querySelector("small").textContent = new Date(m.time).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-  const body = box.querySelector("div"); body.textContent = m.text || "";
-  if (m.attachment && m.attachment.data) { const a = document.createElement("a"); a.href = m.attachment.data; a.download = m.attachment.name || "arquivo"; a.textContent = "📎 " + (m.attachment.name || "Baixar arquivo") + " (" + Math.max(1, Math.round((m.attachment.size || 0) / 1024)) + " KB)"; a.style.cssText = "display:block;color:var(--neon);margin-top:6px;overflow-wrap:anywhere"; body.appendChild(a); if ((m.attachment.type || "").startsWith("image/")) { const img = document.createElement("img"); img.src = m.attachment.data; img.alt = m.attachment.name || "Imagem enviada"; img.style.cssText = "display:block;max-width:min(360px,70vw);max-height:300px;border-radius:8px;margin-top:8px"; body.appendChild(img); } }
-  d.append(a, box); $("msgs").appendChild(d); $("msgs").scrollTop = $("msgs").scrollHeight;
+  box.querySelector("small").textContent = new Date(m.time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const body = box.querySelector("div"); body.textContent = m.text; if (!m.text) body.remove();
+  if (m.file) {
+    const f = m.file, url = API + "/files/" + f.id;
+    const link = el("a"); link.href = url; link.target = "_blank"; link.rel = "noopener";
+    if (f.image) {
+      const im = document.createElement("img"); im.className = "att"; im.src = url; im.alt = f.name;
+      im.onload = () => ($("msgs").scrollTop = $("msgs").scrollHeight); link.append(im);
+    } else { link.className = "file"; link.textContent = `📄 ${f.name} (${fmtSize(f.size)})`; link.download = f.name; }
+    box.append(link);
+  }
+  d.append(a, box);
+  if (myPid && (m.pid === myPid || canManage())) {
+    const x = el("button", "del", "🗑️"); x.title = "Apagar mensagem";
+    x.onclick = () => confirm("Apagar esta mensagem?") && socket.emit("delete-msg", { ch: m.ch, id: m.id }); d.append(x);
+  }
+  $("msgs").appendChild(d); $("msgs").scrollTop = $("msgs").scrollHeight;
 };
 socket.on("msg", (m) => { if (m.ch === curCh) addMsg(m); else { unread[m.ch] = true; renderChannels(); } });
-socket.on("attachment-error", (r) => alert(r && r.error || "Não foi possível enviar o arquivo."));
-$("bfile").onclick = () => { if (!curCh) return alert("Entre em um canal de texto primeiro."); $("attachfile").click(); };
-$("attachfile").onchange = async () => { const files = Array.from($("attachfile").files || []); $("attachfile").value = ""; for (const file of files) { if (file.size > 20 * 1024 * 1024) { alert("O arquivo " + file.name + " ultrapassa 20 MB."); continue; } try { const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); socket.emit("attachment", { ch: curCh, name: file.name, type: file.type || "application/octet-stream", data }); } catch { alert("Não foi possível ler o arquivo."); } } };
+socket.on("msg-deleted", ({ ch, id }) => { if (ch === curCh) { const e = document.querySelector(`.m[data-mid="${id}"]`); if (e) e.remove(); } });
 $("input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.target.value.trim() && curCh) { socket.emit("msg", { ch: curCh, text: e.target.value }); e.target.value = ""; }
 });
-$("badd").onclick = () => {
-  const n = prompt("Nome do novo canal de texto:");
-  if (!n || !n.trim()) return;
-  const description = prompt("Descrição do canal (opcional, até 120 caracteres):", "");
-  if (description === null) return;
-  socket.emit("create-channel", { name: n, description }, (r) => {
-    if (r && r.error) alert(r.error);
-    else if (r && r.id) openChannel(r.id);
-  });
-};
-$("bvadd").onclick = () => {
-  const name = prompt("Nome do novo canal de voz:");
-  if (name && name.trim()) socket.emit("create-voice-channel", { name }, (r) => r && r.error && alert(r.error));
-};
+
+// envio de imagens e arquivos (até 20 MB): botão 📎, arrastar e soltar ou colar
+function upload(file) {
+  const ch = curCh; if (!ch) return;
+  if (file.size > 20 * 1048576) return alert(`"${file.name}" tem mais de 20 MB.`);
+  const x = new XMLHttpRequest(), st = $("upstat");
+  x.open("POST", API + "/upload");
+  x.setRequestHeader("x-sid", socket.id); x.setRequestHeader("x-filename", encodeURIComponent(file.name));
+  x.setRequestHeader("x-filetype", file.type || "application/octet-stream");
+  x.upload.onprogress = (e) => { if (e.lengthComputable) st.textContent = `Enviando ${file.name}… ${Math.round((e.loaded / e.total) * 100)}%`; };
+  x.onload = () => {
+    st.textContent = ""; let r = {}; try { r = JSON.parse(x.responseText); } catch {}
+    if (x.status === 200 && r.id) socket.emit("msg", { ch, text: "", fileId: r.id });
+    else alert(x.status === 413 ? "Arquivo maior que 20 MB." : r.error || "Falha no envio do arquivo.");
+  };
+  x.onerror = () => { st.textContent = ""; alert("Falha no envio do arquivo."); };
+  x.send(file);
+}
+$("battach").onclick = () => $("ufile").click();
+$("ufile").onchange = () => { [...$("ufile").files].slice(0, 5).forEach(upload); $("ufile").value = ""; };
+$("main").addEventListener("dragover", (e) => e.preventDefault());
+$("main").addEventListener("drop", (e) => { e.preventDefault(); [...e.dataTransfer.files].slice(0, 5).forEach(upload); });
+$("input").addEventListener("paste", (e) => {
+  const f = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if (f.length) { e.preventDefault(); f.slice(0, 5).forEach(upload); }
+});
+
+// criar canais (texto e voz)
+function mkChan(type) {
+  const n = prompt(type === "voice" ? "Nome do novo canal de voz:" : "Nome do novo canal de texto:");
+  if (n && n.trim()) socket.emit("create-channel", { name: n, type }, (r) => (r.error ? alert(r.error) : type === "text" && openChannel(r.id)));
+}
+$("badd").onclick = () => mkChan("text");
+$("baddv").onclick = () => mkChan("voice");
 socket.on("room", (i) => {
   info = i;
-  if (!info.channels.some((c) => c.id === curCh)) openChannel(info.channels[0].id);
+  if (voiceCh && !info.channels.some((c) => c.id === voiceCh)) leaveVoice(); // o canal de voz em que eu estava foi apagado
+  if (!info.channels.some((c) => c.id === curCh && c.type === "text")) { const f = info.channels.find((c) => c.type === "text"); if (f) openChannel(f.id); }
   render(); if (!$("rolemodal").hidden) renderRoles();
 });
 socket.on("members", (list) => { members = Object.fromEntries(list.map((m) => [m.pid, m])); render(); refreshMe(); });
@@ -456,9 +452,10 @@ $("rcreate").onclick = () => {
 function initAudio() {
   if (ctx) return ctx.resume();
   ctx = new AudioContext(); master = ctx.createGain(); master.connect(ctx.destination);
+  sfxBus = ctx.createGain(); sfxBus.connect(ctx.destination); // sons de aviso: não somem quando você ensurdece
   applyVol(); applySink(); setInterval(tick, 120);
 }
-const applyVol = () => master && (master.gain.value = deaf ? 0 : set.spkVol);
+function applyVol() { if (!master) return; master.gain.value = deaf ? 0 : set.spkVol; sfxBus.gain.value = set.spkVol; }
 function applySink() { try { ctx && ctx.setSinkId && ctx.setSinkId(set.spk || "").catch(() => {}); } catch {} }
 function level(an) { const d = new Uint8Array(an.fftSize); an.getByteTimeDomainData(d); let m = 0; for (const v of d) m = Math.max(m, Math.abs(v - 128)); return m; }
 function tick() {
@@ -478,6 +475,36 @@ function gainOf(id) {
   applyGain(id); return gains[id];
 }
 function applyGain(id) { const p = prefs[id] || { vol: 1, muted: false }; if (gains[id]) gains[id].gain.value = p.muted ? 0 : p.vol; }
+
+// sons de aviso (sintetizados, sem arquivos): entrar/sair, mutar/desmutar, ensurdecer
+const SOUNDS = {
+  join: [[523, 0, .14], [659, .09, .14], [784, .18, .3]],
+  leave: [[784, 0, .12], [659, .09, .12], [523, .18, .26]],
+  muteOn: [[330, 0, .1], [247, .08, .16]], muteOff: [[392, 0, .1], [523, .08, .18]],
+  deafOn: [[294, 0, .1], [220, .09, .1], [165, .18, .18]], deafOff: [[165, 0, .1], [220, .09, .1], [294, .18, .18]],
+};
+function sfx(n, kind) { // kind: call (entrar/sair), self (você mutou), other (outra pessoa mutou)
+  const flag = { call: "sndJoin", self: "sndMute", other: "sndOthers" }[kind];
+  if (!ctx || !sfxBus || !set[flag] || profile.status === "dnd" || (deaf && kind !== "self")) return;
+  const t0 = ctx.currentTime, v = kind === "other" ? 0.1 : 0.2;
+  SOUNDS[n].forEach(([f, d, len]) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0 + d); g.gain.exponentialRampToValueAtTime(v, t0 + d + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + len);
+    o.connect(g); g.connect(sfxBus); o.start(t0 + d); o.stop(t0 + d + len + 0.05);
+  });
+}
+function diffSounds(prev, cur) {
+  const pm = new Map(prev.map((u) => [u.id, u]));
+  cur.forEach((u) => {
+    if (u.id === socket.id) return;
+    const o = pm.get(u.id);
+    if (!o) sfx("join", "call");
+    else if (o.deafened !== u.deafened) sfx(u.deafened ? "deafOn" : "deafOff", "other");
+    else if (o.muted !== u.muted) sfx(u.muted ? "muteOn" : "muteOff", "other");
+  });
+  prev.forEach((u) => { if (u.id !== socket.id && !cur.some((c) => c.id === u.id)) sfx("leave", "call"); });
+}
 
 // microfone -> ganho (volume do microfone) -> faixa enviada aos outros
 function closeMic() {
@@ -519,7 +546,8 @@ async function fillDevices() {
 }
 $("bset").onclick = async () => {
   await initAudio();
-  $("vmic").value = set.micVol * 100; $("vspk").value = set.spkVol * 100; $("echo").checked = set.echo; $("noise").checked = set.noise; $("sounds").checked = set.sounds;
+  $("vmic").value = set.micVol * 100; $("vspk").value = set.spkVol * 100; $("echo").checked = set.echo; $("noise").checked = set.noise;
+  ["sndJoin", "sndMute", "sndOthers"].forEach((k) => ($(k).checked = set[k]));
   $("setmodal").hidden = false;
   if (!micStream) await openMic();
   await fillDevices();
@@ -535,7 +563,6 @@ $("selspk").onchange = () => { set.spk = $("selspk").value || null; LS.set("audi
 $("vmic").oninput = () => { set.micVol = $("vmic").value / 100; if (micGain) micGain.gain.value = set.micVol; LS.set("audio", set); };
 $("vspk").oninput = () => { set.spkVol = $("vspk").value / 100; applyVol(); LS.set("audio", set); };
 $("echo").onchange = $("noise").onchange = async () => { set.echo = $("echo").checked; set.noise = $("noise").checked; LS.set("audio", set); await swapMic(); };
-$("sounds").onchange = () => { set.sounds = $("sounds").checked; LS.set("audio", set); };
 $("btest").onclick = async () => {
   if (!micStream && !(await openMic())) return alert("Sem acesso ao microfone.");
   testing = !testing;
@@ -543,11 +570,17 @@ $("btest").onclick = async () => {
   $("btest").textContent = testing ? "Parar teste" : "Teste do microfone";
 };
 navigator.mediaDevices && (navigator.mediaDevices.ondevicechange = () => !$("setmodal").hidden && fillDevices());
+const SAMPLE = { sndJoin: ["join", "call"], sndMute: ["muteOn", "self"], sndOthers: ["muteOff", "other"] };
+Object.keys(SAMPLE).forEach((k) => ($(k).onchange = () => { set[k] = $(k).checked; LS.set("audio", set); if (set[k]) sfx(...SAMPLE[k]); }));
 
 function sendState() { socket.emit("voice-state", { muted: muted || deaf, deafened: deaf, screen: !!vids.screen, cam: !!vids.camera }); }
 function applyAll() { applyVol(); applyMic(); sendState(); ui(); }
-$("bmic").onclick = () => { if (deaf) { deaf = false; muted = false; } else muted = !muted; playUiSound("mute"); applyAll(); };
-$("bdeaf").onclick = () => { deaf = !deaf; playUiSound("click"); applyAll(); };
+$("bmic").onclick = () => {
+  const wasDeaf = deaf;
+  if (deaf) { deaf = false; muted = false; } else muted = !muted;
+  applyAll(); if (voiceCh) sfx(wasDeaf ? "deafOff" : muted ? "muteOn" : "muteOff", "self");
+};
+$("bdeaf").onclick = () => { deaf = !deaf; applyAll(); if (voiceCh) sfx(deaf ? "deafOn" : "deafOff", "self"); };
 
 // ---------- menu de volume de uma pessoa da call ----------
 function userMenu(id, n, ev) {
@@ -561,25 +594,26 @@ function userMenu(id, n, ev) {
 }
 
 // ---------- entrar / sair da voz ----------
-async function joinVoice(channelId) {
-  if (voiceCh === channelId) return;
+async function joinVoice(id) {
+  if (voiceCh === id) return;
+  if ((voiceMap[id] || []).length >= MAX) return alert("Canal cheio: máximo de " + MAX + " pessoas.");
+  if (voiceCh) leaveVoice();
   await initAudio();
   if (!(await openMic())) alert("Sem acesso ao microfone: você entrará só ouvindo.");
-  socket.emit("voice-join", { channelId }, (r) => {
+  socket.emit("voice-join", { channel: id }, (r) => {
     if (r && r.error) { closeMic(); return alert(r.error); }
-    voiceCh = channelId; if (micStream) watch(socket.id, micStream);
-    playUiSound("join"); sendState(); syncPeers(); ui();
+    voiceCh = id; if (micStream) watch(socket.id, micStream);
+    sendState(); syncPeers(); ui(); sfx("join", "call");
   });
 }
 function leaveVoice() {
-  playUiSound("leave");
   ["camera", "screen"].forEach((k) => vids[k] && vids[k].getTracks().forEach((t) => t.stop()));
   vids.camera = vids.screen = null;
   closeMic(); Object.keys(pcs).forEach(closePc);
   $("grid").innerHTML = ""; delete analysers[socket.id];
   voiceCh = null; socket.emit("voice-leave"); ui();
 }
-$("bleave").onclick = leaveVoice;
+$("bleave").onclick = () => { sfx("leave", "call"); leaveVoice(); };
 
 // ---------- vídeo (câmera / tela) ----------
 function addTile(k, stream, label, owner) {
@@ -678,23 +712,39 @@ socket.on("signal", async ({ from, data }) => {
 });
 function syncPeers() {
   if (!voiceCh) return;
-  const ids = voiceUsers.filter((x) => x.channelId === voiceCh).map((x) => x.id).filter((x) => x !== socket.id);
+  const ids = myVoice().map((x) => x.id).filter((x) => x !== socket.id);
   ids.forEach(getPc); Object.keys(pcs).filter((x) => !ids.includes(x)).forEach(closePc);
 }
-socket.on("voice-users", (u) => { const previous = new Set(voiceUsers.filter((x) => x.channelId === voiceCh).map((x) => x.id)); voiceUsers = u; if (voiceCh && voiceUsers.some((x) => x.channelId === voiceCh && x.id !== socket.id && !previous.has(x.id))) playUiSound("join"); syncPeers(); render(); });
+socket.on("voice-users", (m) => {
+  const prev = myVoice(); voiceMap = m;
+  if (voiceCh && prev.some((u) => u.id === socket.id)) diffSounds(prev, myVoice()); // só depois que eu já estava na lista (evita tocar "entrou" para todo mundo ao chegar)
+  syncPeers(); render();
+});
 
 // ---------- perfil ----------
+const STATUSES = [
+  ["online", "Disponível", "", "#00e5ff"], ["away", "Ausente", "", "#fbbf24"],
+  ["dnd", "Não perturbar", "Sem sons de chamada", "#f23f43"], ["invisible", "Invisível", "Você vai aparecer offline", "#8a85ad"],
+];
+const statusLabel = (st) => (STATUSES.find((x) => x[0] === st) || STATUSES[0])[1];
+function renderStatus() {
+  const l = $("stlist"); l.innerHTML = "";
+  STATUSES.forEach(([id, t, d, c]) => {
+    const r = el("button", "strow" + (profile.status === id ? " sel" : "")), dot = el("span", "sdot"); dot.style.background = c;
+    const box = el("div"); box.append(el("div", "", t)); if (d) box.append(el("small", "", d));
+    r.append(dot, box); r.onclick = () => { profile.status = id; saveProfile(); renderStatus(); }; l.append(r);
+  });
+}
 function refreshMe() {
   $("meav").replaceWith(Object.assign(avatar(myPid || "me", profile.name || "?", socket.id), { id: "meav" }));
   $("mename").textContent = profile.name || "";
-  const labels = { online: "🟢 online", away: "🟡 ausente", dnd: "🔴 não perturbar", invisible: "⚫ invisível" };
-  const sub = $("me").querySelector(".mn small"); if (sub) sub.textContent = labels[profile.presence] || labels.online;
+  $("mestatus").textContent = statusLabel(profile.status);
+  $("medot").className = "dot " + (profile.status === "invisible" ? "inv" : profile.status || "online");
 }
 function saveProfile() {
   LS.set("profile", profile);
-  if (socket.connected) socket.emit("profile", { name: profile.name, avatar: profile.avatar, key, presence: profile.presence });
+  if (socket.connected) socket.emit("profile", { name: profile.name, avatar: profile.avatar, status: profile.status, key });
   refreshMe();
-  render();
 }
 function pickPhoto(cb) { // recorta em quadrado e reduz para 96x96
   const f = $("pfile"); f.value = "";
@@ -720,21 +770,20 @@ $("me").onclick = (e) => {
   if (e.target.closest("button")) return;
   e.stopPropagation();
   const p = $("profpop"); if (!p.hidden) { p.hidden = true; return; }
-  $("pname").value = profile.name; $("presence").value = profile.presence || "online"; paint($("pav"), profile.avatar, profile.name); p.hidden = false;
+  $("pname").value = profile.name; paint($("pav"), profile.avatar, profile.name); renderStatus(); p.hidden = false;
   const r = $("me").getBoundingClientRect(); p.style.left = r.left + 8 + "px"; p.style.top = Math.max(8, r.top - p.offsetHeight - 8) + "px";
 };
 $("pav").onclick = $("pchange").onclick = () => pickPhoto((d) => { profile.avatar = d; paint($("pav"), d, profile.name); saveProfile(); });
 $("premove").onclick = () => { profile.avatar = null; paint($("pav"), null, profile.name); saveProfile(); };
-const saveName = () => { const n = $("pname").value.trim(); if (!n) return; profile.name = n; profile.presence = $("presence").value; saveProfile(); $("profpop").hidden = true; };
+const saveName = () => { const n = $("pname").value.trim(); if (!n) return; profile.name = n; saveProfile(); $("profpop").hidden = true; };
 $("psave").onclick = saveName; $("pname").onkeydown = (e) => e.key === "Enter" && saveName();
-$("presence").onchange = () => { profile.presence = $("presence").value; saveProfile(); };
 
 // ---------- salas ----------
 function enterRoom(code, password = "") {
   if (voiceCh) leaveVoice();
   socket.emit("enter-room", { code, password }, (r) => {
     if (!r.ok) { $("lerr").textContent = r.error; return; }
-    room = r.code; myPid = r.pid; info = r.info; voiceUsers = []; unread = {}; curCh = null; roomPass = password; locked = !!r.locked;
+    room = r.code; myPid = r.pid; info = r.info; voiceMap = {}; unread = {}; curCh = null; roomPass = password; locked = !!r.locked;
     members = Object.fromEntries(r.members.map((m) => [m.pid, m]));
     $("rname").textContent = r.name; $("rcode").textContent = "Código: " + r.code + (locked ? " 🔒" : "");
     $("lobby").hidden = true; $("lerr").textContent = "";
@@ -744,7 +793,7 @@ function enterRoom(code, password = "") {
 }
 function exitRoom() {
   if (voiceCh) leaveVoice();
-  socket.emit("leave-room"); room = null; myPid = null; voiceUsers = []; members = {}; curCh = null;
+  socket.emit("leave-room"); room = null; myPid = null; voiceMap = {}; members = {}; curCh = null;
   $("msgs").innerHTML = ""; $("title").textContent = ""; $("lobby").hidden = false; render(); refreshMe();
 }
 function checkNick() {
@@ -794,14 +843,13 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest("#profpop,#me,#pfile")) $("profpop").hidden = true;
 });
 $("btnmem").onclick = () => document.body.classList.toggle(innerWidth > 1000 ? "nomem" : "showmem");
-$("membersearch").addEventListener("input", () => { memberFilter = $("membersearch").value; renderMembers(); });
 
 // ---------- conexão ----------
-socket.on("connect", () => { $("lstatus").textContent = "Conectado ✓"; if (profile.name) socket.emit("profile", { name: profile.name, avatar: profile.avatar, key, presence: profile.presence }); });
+socket.on("connect", () => { $("lstatus").textContent = "Conectado ✓"; if (profile.name) socket.emit("profile", { name: profile.name, avatar: profile.avatar, status: profile.status, key }); });
 socket.on("connect_error", () => { $("lstatus").textContent = "Sem conexão com o servidor. Tentando de novo… (pode levar até 1 min se ele estava dormindo)"; });
 socket.on("disconnect", () => {
   if (voiceCh) leaveVoice();
-  room = null; myPid = null; voiceUsers = []; members = {}; $("lobby").hidden = false; $("lerr").textContent = "Conexão perdida. Entre na sala de novo."; render();
+  room = null; myPid = null; voiceMap = {}; members = {}; $("lobby").hidden = false; $("lerr").textContent = "Conexão perdida. Entre na sala de novo."; render();
 });
 
 // ---------- início ----------
