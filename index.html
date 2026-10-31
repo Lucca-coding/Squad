@@ -480,7 +480,7 @@ function renderVoice() {
         r.append(el("span", "badge", "AO VIVO"));
         if (u.id !== socket.id) {
           const wb = el("button", "watch", watching[u.id] ? "Parar" : "Assistir");
-          wb.onclick = (e) => { e.stopPropagation(); if (watching[u.id]) { stopWatch(u.id, true); renderVoice(); } else watchMenu(u.id, e); };
+          wb.onclick = (e) => { e.stopPropagation(); if (watching[u.id]) { stopWatch(u.id, true); renderVoice(); } else watchStream(u.id); };
           r.append(wb);
         }
       }
