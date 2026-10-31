@@ -241,6 +241,7 @@ io.on("connection", (s) => {
   s.on("delete-channel", ({ id }) => {
     const r = rooms.get(s.data.room), c = r && r.channels.find((x) => x.id === id);
     if (!c || !can(s, r)) return;
+    if (c.type === "text" && r.channels.filter((x) => x.type === "text").length <= 1) return; // mantém ao menos um canal de texto
     r.channels = r.channels.filter((x) => x.id !== id);
     dropFiles(r.msgs[id]); delete r.msgs[id];
     socketsIn(s.data.room).forEach((x) => { if (x.data.voice === id) x.data.voice = false; });
