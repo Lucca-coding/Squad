@@ -372,7 +372,27 @@ if (typeof module !== "undefined") module.exports = { EchoSub };
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const CFG = window.MINICORD || {};
-const socket = io(CFG.SERVER_URL || undefined);
+const socket = io(CFG.SERVER_URL || undefined, {
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 10000,
+  timeout: 20000,
+});
+socket.on("connect", () => {
+  $("lstatus").textContent = "Servidor conectado.";
+  $("lstatus").style.color = "var(--ok, #22c55e)";
+});
+socket.on("connect_error", (err) => {
+  console.error("[SQUAD] Falha ao conectar ao servidor:", err);
+  $("lstatus").textContent = "Não foi possível conectar. Tentando novamente…";
+  $("lstatus").style.color = "var(--red)";
+});
+socket.on("disconnect", (reason) => {
+  console.warn("[SQUAD] Conexão com o servidor encerrada:", reason);
+  $("lstatus").textContent = "Conexão perdida. Reconectando…";
+  $("lstatus").style.color = "var(--red)";
+});
 const $ = (id) => document.getElementById(id);
 const rtc = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, ...(CFG.TURN || [])] };
 const MAX = 10;
