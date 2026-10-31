@@ -369,27 +369,17 @@ if (typeof module !== "undefined") module.exports = { EchoSub };
 </div></div>
 
 <script src="config.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const CFG = window.MINICORD || {};
-const socketScript = document.createElement("script");
-socketScript.src = "https://cdn.socket.io/4.7.5/socket.io.min.js";
-socketScript.onload = () => {
+let socket;
+function startSocket() {
   if (typeof window.io !== "function") {
-    $("lstatus").textContent = "Biblioteca Socket.IO carregou incorretamente.";
+    $("lstatus").textContent = "Biblioteca Socket.IO indisponível (CDN).";
     $("lstatus").style.color = "var(--red)";
     return;
   }
-  startSocket();
-};
-socketScript.onerror = () => {
-  $("lstatus").textContent = "Não foi possível carregar o Socket.IO (CDN).";
-  $("lstatus").style.color = "var(--red)";
-  console.error("[SQUAD] Falha ao carregar https://cdn.socket.io/4.7.5/socket.io.min.js");
-};
-document.head.appendChild(socketScript);
-let socket;
-function startSocket() {
   if (!CFG.SERVER_URL) {
     $("lstatus").textContent = "Endereço do servidor não encontrado em config.js.";
     $("lstatus").style.color = "var(--red)";
@@ -417,6 +407,7 @@ function startSocket() {
     $("lstatus").style.color = "var(--red)";
   });
 }
+startSocket();
 const rtc = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, ...(CFG.TURN || [])] };
 const MAX = 10;
 const limitOf = (id) => (info.channels.find((c) => c.id === id) || {}).limit || MAX;
