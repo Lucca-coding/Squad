@@ -87,13 +87,14 @@ const rooms = new Map();
 const newCode = () => { let c; do c = crypto.randomBytes(3).toString("hex").toUpperCase(); while (rooms.has(c)); return c; };
 const newRoom = (name, owner) => ({
   name, owner, members: new Map(), msgs: { geral: [] },
-  channels: [{ id: "geral", type: "text", name: "geral" }, { id: "voz", type: "voice", name: "Voz" }],
+  channels: [{ id: "geral", type: "text", name: "geral" }, { id: "voz", type: "voice", name: "Voz", limit: MAX }],
   roles: [{ id: "admin", name: "Admin", color: "#f23f43" }],
 });
 const info = (r) => ({ channels: r.channels, roles: r.roles, owner: r.owner });
 const socketsIn = (code) => [...io.sockets.sockets.values()].filter((s) => s.data.room === code);
 const can = (s, r) => s.data.pid && (s.data.pid === r.owner || (r.members.get(s.data.pid) || {}).role === "admin");
 const firstText = (r) => r.channels.find((c) => c.type === "text");
+const limitOf = (n) => Math.min(MAX, Math.max(2, parseInt(n, 10) || MAX)); // limite de pessoas: 2 a 10
 
 const voiceOf = (code) => {
   const out = {};
@@ -169,7 +170,7 @@ io.on("connection", (s) => {
     room.members.set(s.data.pid, m);
     s.data.room = code;
     s.join("r:" + code);
-    ack({ ok: true, code, name: room.name, locked: !!room.hash, pid: s.data.pid, info: info(room), members: membersOf(code), ch: firstText(room).id });
+    ack({ ok: true, code, name: room.name, locked: !!room.hash, pid: s.data.pid, info: info(room), members: membersOf(code), ch: (firstText(room) || {}).id || null });
     push(code);
     pushMembers(code);
     pushInfo(code);
@@ -192,6 +193,14 @@ io.on("connection", (s) => {
     if (list.length > 50) list.shift();
     io.to("r:" + s.data.room).emit("msg", m);
   });
+  s.on("edit-msg", ({ ch, id, text }) => {
+    const r = rooms.get(s.data.room), list = r && r.msgs[ch];
+    const m = list && list.find((x) => x.id === id);
+    text = String(text || "").slice(0, 2000);
+    if (!m || m.pid !== s.data.pid || (!text.trim() && !m.file)) return; // só o autor edita
+    m.text = text; m.edited = true;
+    io.to("r:" + s.data.room).emit("msg-edited", { ch, id, text });
+  });
   s.on("delete-msg", ({ ch, id }) => {
     const r = rooms.get(s.data.room), list = r && r.msgs[ch];
     const i = list ? list.findIndex((m) => m.id === id) : -1;
@@ -204,7 +213,7 @@ io.on("connection", (s) => {
   });
 
   // ----- canais (texto e voz) -----
-  s.on("create-channel", ({ name, type }, ack) => {
+  s.on("create-channel", ({ name, type, limit }, ack) => {
     const r = rooms.get(s.data.room);
     if (!r || !can(s, r)) return ack({ error: "Sem permissão." });
     name = clean(name, 30);
@@ -212,15 +221,26 @@ io.on("connection", (s) => {
     if (r.channels.length >= 30) return ack({ error: "Limite de canais atingido." });
     type = type === "voice" ? "voice" : "text";
     const id = rid();
-    r.channels.push({ id, type, name });
+    const c = { id, type, name };
+    if (type === "voice") c.limit = limitOf(limit);
+    r.channels.push(c);
     if (type === "text") r.msgs[id] = [];
     pushInfo(s.data.room); // antes do ack, para o cliente já conhecer o canal
     ack({ id });
   });
+  s.on("edit-channel", ({ id, name, limit }, ack) => {
+    const r = rooms.get(s.data.room), c = r && r.channels.find((x) => x.id === id);
+    if (!c || !can(s, r)) return ack && ack({ error: "Sem permissão." });
+    name = clean(name, 30);
+    if (!name) return ack && ack({ error: "Nome inválido." });
+    c.name = name;
+    if (c.type === "voice") c.limit = limitOf(limit);
+    pushInfo(s.data.room);
+    ack && ack({ ok: true });
+  });
   s.on("delete-channel", ({ id }) => {
     const r = rooms.get(s.data.room), c = r && r.channels.find((x) => x.id === id);
     if (!c || !can(s, r)) return;
-    if (c.type === "text" && r.channels.filter((x) => x.type === "text").length <= 1) return; // sempre sobra um canal de texto
     r.channels = r.channels.filter((x) => x.id !== id);
     dropFiles(r.msgs[id]); delete r.msgs[id];
     socketsIn(s.data.room).forEach((x) => { if (x.data.voice === id) x.data.voice = false; });
@@ -259,8 +279,9 @@ io.on("connection", (s) => {
     const r = rooms.get(s.data.room);
     if (!r) return ack({ error: "Entre em uma sala primeiro." });
     if (!r.channels.some((c) => c.id === channel && c.type === "voice")) return ack({ error: "Canal de voz não encontrado." });
-    if (s.data.voice !== channel && (voiceOf(s.data.room)[channel] || []).length >= MAX)
-      return ack({ error: `Canal cheio: máximo de ${MAX} pessoas.` });
+    const vc = r.channels.find((c) => c.id === channel), cap = (vc && vc.limit) || MAX;
+    if (s.data.voice !== channel && (voiceOf(s.data.room)[channel] || []).length >= cap)
+      return ack({ error: `Canal cheio: máximo de ${cap} pessoas.` });
     Object.assign(s.data, { voice: channel, muted: false, deafened: false, screen: false, cam: false });
     ack({ ok: true });
     push(s.data.room);
